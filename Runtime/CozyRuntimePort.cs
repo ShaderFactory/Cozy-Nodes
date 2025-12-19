@@ -1,7 +1,4 @@
-using Codice.CM.Common.Tree;
 using System;
-using System.Diagnostics;
-using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace ShaderFactory.CozyGraphToolkit.Runtime
 {

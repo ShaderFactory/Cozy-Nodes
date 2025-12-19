@@ -18,8 +18,5 @@
     "name": "Shader Factory",
     "email": "contact@shaderfactory.com",
     "url": "https://www.shaderfactory.com"
-  },
-  "dependencies": {
-    "com.unity.graphtools.foundation": "0.4.0-exp.2"
   }
 }

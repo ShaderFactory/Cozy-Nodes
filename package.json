@@ -1,0 +1,22 @@
+{
+  "name": "com.shaderfactory.cozygraphtoolkit",
+  "version": "0.1.0",
+  "displayName": "Cozy Graph Toolkit",
+  "description": "Offers a node based environment to build systems with.",
+  "unity": "6000.2",
+  "unityRelease": "13f1",
+  "documentationUrl": "https://github.com/RodrigoCGGomes/QuietFallsDocumentation",
+  "keywords": [
+    "Shader Factory",
+    "Cozy",
+    "Graph Toolkit",
+    "Nodes",
+    "Dialogue",
+    "Cutscenes"
+  ],
+  "author": {
+    "name": "Shader Factory",
+    "email": "contact@shaderfactory.com",
+    "url": "https://www.shaderfactory.com"
+  }
+}

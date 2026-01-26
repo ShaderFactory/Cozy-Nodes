@@ -13,24 +13,46 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
     {
         public override void OnImportAsset(AssetImportContext ctx)
         {
+            Debug.LogWarning("Started Import Proccess.");
+
+            // Unity's Graph Toolkit way of starting the import proccess.
             CozyGraph cozyGraphEditor = GraphDatabase.LoadGraphForImporter<CozyGraph>(ctx.assetPath);
             RuntimeCozyGraph cozyGraphRuntime = ScriptableObject.CreateInstance<RuntimeCozyGraph>();
 
-            // Build a dictionary with generated GUID
-            Dictionary<INode, string> ids = new();
+            // Build a dictionary of graph`s INodes with generated GUID
+            Dictionary<INode, string> nodesIdDictionary = new();
             foreach (var node in cozyGraphEditor.GetNodes())
-            { 
-                ids[node] = Guid.NewGuid().ToString();
+            {
+                nodesIdDictionary[node] = Guid.NewGuid().ToString();
             }
+
+            foreach (var editorNode in cozyGraphEditor.GetNodes())
+            {
+                // If it's not a custom node, just throw an error and return.
+                if (editorNode is not CozyEditorNode cen)
+                {
+                    Debug.LogError($"editorNode {StringHelper.RemoveHierarchyFromClassName(editorNode.ToString())} is not CozyEditorNode.");
+                }
+                else
+                { 
+                    // If it's a custom user node...
+                    Debug.Log($"{StringHelper.RemoveHierarchyFromClassName(editorNode.ToString())} is being proccessed.");
+                    cen.CreateRuntimeNode(nodesIdDictionary[editorNode], editorNode.GetType().ToString(), cozyGraphRuntime);                
+                }
+
+
+            }
+
+            /* I WILL CHANGE ALL OF THAT TO HAVE THE IMPORT LOGIC INSIDE THE CozyEditorNode OnImport method
 
             // Detect entry node from StartNode
             var start = cozyGraphEditor.GetNodes().OfType<StartNode>().FirstOrDefault();
             if (start != null)
             {
-                var outPort = start.GetOutputPorts().FirstOrDefault();      // Gets the first output.
-                var next = outPort?.firstConnectedPort;                     // Gets the what's connected to the first output.
-                if (next != null)                                           // Then if we found a connection to the first output...
-                    cozyGraphRuntime.EntryNodeID = ids[next.GetNode()];     // We set the Runtime Graph's Entry node to that node.
+                var outPort = start.GetOutputPorts().FirstOrDefault();                  // Gets the first output.
+                var next = outPort?.firstConnectedPort;                                 // Gets the what's connected to the first output.
+                if (next != null)                                                       // Then if we found a connection to the first output...
+                    cozyGraphRuntime.EntryNodeID = nodesIdDictionary[next.GetNode()]    // We set the Runtime Graph's Entry node to that node.
             }
 
             // For each editor nodes...
@@ -44,25 +66,25 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
 
                 if (node is CozyEditorNode cen)
                 {
-                    r = cen.CreateRuntimeNode(ids[node], node.GetType().Name, cozyGraphRuntime);
+                    r = cen.CreateRuntimeNode(nodesIdDictionary[node], node.GetType().Name, cozyGraphRuntime);
                     Debug.Log($"HEYYYY Importer created runtime node of type: {r.GetType().FullName} for editor node {node.GetType().Name}");
 
                     // Convert all INPUT ports into RuntimeCozyPorts.
                     foreach (IPort port in node.GetInputPorts())
                     {
-                        r.RegisterPort(port.name, GetPortValue(port, ids), false);
+                        r.RegisterPort(port.name, GetPortValue(port, nodesIdDictionary), false);
                     }
 
                     // Convert also all OUTPUT ports into RuntimeCozyPorts.
                     foreach (IPort port in node.GetOutputPorts())
                     {
-                        r.RegisterPort(port.name, GetPortValue(port, ids), true);
+                        r.RegisterPort(port.name, GetPortValue(port, nodesIdDictionary), true);
                     }
                 }
                 else
                 {
                     r = new RuntimeCozyNode();
-                    r.NodeID = ids[node];
+                    r.NodeID = nodesIdDictionary[node];
                     r.NodeType = node.GetType().Name;
                 }
 
@@ -70,17 +92,20 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
                 var outPort = node.GetOutputPorts().FirstOrDefault();
                 var next = outPort?.firstConnectedPort;
                 if (next != null)
-                    r.NextNodeID = ids[next.GetNode()];
+                    r.NextNodeID = nodesIdDictionary[next.GetNode()];
 
                 cozyGraphRuntime.AllNodes.Add(r);
             }
+            END */
 
             // Unity's Graph Toolkit way of finishing the import proccess.
             ctx.AddObjectToAsset("Runtime", cozyGraphRuntime);
             ctx.SetMainObject(cozyGraphRuntime);
 
+            Debug.LogWarning("Ended Import Proccess.");
+
             // Uncomment the following line to open the Json version of the runtimeGraph at the end of the import:
-            RuntimeGraphJsonDebug.DumpToJsonAndOpen(cozyGraphRuntime);
+            // RuntimeGraphJsonDebug.DumpToJsonAndOpen(cozyGraphRuntime);
         }
 
         public static object GetPortValue(IPort _port, Dictionary<INode, string> _ids)
@@ -90,7 +115,9 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
             // Caso tenha algo conectado, vamos verificar.
             if (_port.isConnected)
             {
-                INode connectedNode = _port.firstConnectedPort.GetNode();
+                bool isOutput = _port.direction == PortDirection.Output;    // Determine port direction.
+
+                INode connectedNode = _port.firstConnectedPort.GetNode();   
 
                 if (connectedNode is IConstantNode cn)
                 {
@@ -106,15 +133,19 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
 
                 //  if (connectedNode is CozyEditorNode) */
                 // {
-                    RuntimeIPort portValue = new(_ids[_port.GetNode()], _port.firstConnectedPort.name);
-                    // portValue.
-                    return portValue;
+                /////////////////////////////////////////////ConnectedPortAddress portAddress = new(_ids[_port.GetNode()], _port.name, isOutput);
+
+                // portValue.
+                //////////////////////////////////////////////return portValue;
                 // }
 
                 // string[] nodeNameSplit = _port.GetNode().ToString().Split(".");
                 // string nodeName = nodeNameSplit[nodeNameSplit.Length -1];
                 // 
                 // return $"Could not determine the value of { nodeName }'s {_port.name } port.";
+
+
+                return null;
             }
             else
             {

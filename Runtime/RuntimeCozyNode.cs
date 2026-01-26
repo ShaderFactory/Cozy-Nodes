@@ -89,4 +89,20 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
             return null;
         }
     }
+
+    [Serializable]
+    public class ConnectedPortAddress
+    {
+        public RuntimeCozyNode node;
+        public string portName;
+        public bool isOutput;
+
+        public ConnectedPortAddress(RuntimeCozyNode _node, string _portName, bool _isOutput)
+        {
+            node = _node;
+            portName = _portName;
+            isOutput = _isOutput;
+        }
+    }
+
 }

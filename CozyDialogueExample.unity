@@ -705,7 +705,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a6019c134afb1814a9d791a338ffa7bf, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DialogueManager
-  RuntimeGraph: {fileID: 7194093555672020370, guid: 535ed0eedf943994aafac8780c615d71, type: 3}
+  RuntimeGraph: {fileID: 7194093555672020370, guid: 517204098cd62474e851d5d026c9e2d9, type: 3}
 --- !u!114 &995913293
 MonoBehaviour:
   m_ObjectHideFlags: 0

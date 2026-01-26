@@ -10,6 +10,7 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
             var node = new CustomPrintRuntime();
             node.NodeID = _nodeID;
             node.NodeType = _nodeType;
+            node.Graph = _graph;
             return node;
         }
 

@@ -30,9 +30,14 @@ Package identifier: `com.shaderfactory.cozygraphtoolkit`
 5. Enter Play Mode. The text in the Print Node appears in the Unity Console.
 
 ## Nodes
-### Set Variable Node
+
+<details>
+<summary>Set Variable Node</summary>
+
 Changes a Blackboard variable for this running graph only. Connect the Blackboard variable node to **Variable** and its new value to **Value**.
 <img width="900" height="200" alt="image" src="https://github.com/ShaderFactory/Cozy-Nodes/blob/main/Documentation~/Images/image-node-setvariable.png?raw=true" />
+
+</details>
 
 ## Development status
 

@@ -1,59 +1,70 @@
-using System.Collections.Generic;
+using System;
 using UnityEngine;
 
 namespace ShaderFactory.CozyGraphToolkit.Runtime
 {
+    /// <summary>
+    /// Unity-facing entry point for one Cozy graph. It exposes the small public API
+    /// used by scenes and game code, while CozyGraphRunner owns execution details.
+    /// </summary>
     public class CozyManager : MonoBehaviour
     {
         public RuntimeCozyGraph RuntimeGraph;
 
-        private RuntimeCozyNode current;
-        private Dictionary<string, RuntimeCozyNode> lookup =
-            new Dictionary<string, RuntimeCozyNode>();
+        /// <summary>
+        /// Values local to this execution of RuntimeGraph. The graph asset supplies
+        /// only defaults; this table is the safe place for future Get/Set nodes.
+        /// </summary>
+        public CozyRuntimeVariables RuntimeVariables { get; private set; }
 
-        void Start()
+        /// <summary>
+        /// Raised when a graph executes an Invoke Event node. Game code subscribes to
+        /// this event to react without Cozy Nodes knowing any game-specific systems.
+        /// </summary>
+        public event Action<CozyEvent> EventInvoked;
+
+        private CozyGraphRunner graphRunner;
+
+        private void Awake()
         {
-            // Check if there is a graph assigned to the inspector
-            if (RuntimeGraph == null)
-            {
-                Debug.LogWarning("Please assign a Graph to the Cozy Manager.");
-                return;
-            }
-
-            // Build lookup table
-            foreach (var n in RuntimeGraph.AllNodes)
-                lookup[n.NodeID] = n;
-
-            // Start at entry
-            if (!string.IsNullOrEmpty(RuntimeGraph.EntryNodeID))
-                GoTo(RuntimeGraph.EntryNodeID);
-            else
-                Debug.Log("Graph has no entry node.");
+            graphRunner = new CozyGraphRunner(this);
         }
 
-        public void GoTo(string id)
+        private void Start()
         {
-            if (!lookup.TryGetValue(id, out current))
-            {
-                Debug.LogWarning("NodeID not found: " + id);
-                return;
-            }
-
-            // Debug.LogWarning(current.NodeType);
-
-            current.Run();
-            Next();
+            RuntimeVariables = new CozyRuntimeVariables(RuntimeGraph?.VariableDefinitions);
+            graphRunner.Start(RuntimeGraph);
         }
 
-        public void Next()
+        /// <summary>
+        /// Sends a named event to the node currently waiting in this graph.
+        /// A UI Button can call this method directly and provide its trigger name.
+        /// </summary>
+        public void Trigger(string triggerName)
         {
-            if (current == null || string.IsNullOrEmpty(current.NextNodeID))
+            graphRunner.Trigger(triggerName);
+        }
+
+        /// <summary>
+        /// Invokes an event for the game code that owns this graph runner.
+        /// Custom game nodes can also use this method without creating a dependency
+        /// from the Cozy Nodes package back to the game assembly.
+        /// </summary>
+        public void InvokeEvent(CozyEvent cozyEvent)
+        {
+            if (cozyEvent == null)
             {
-                Debug.Log("Graph ended.");
+                Debug.LogWarning("Tried to invoke a missing Cozy event.");
                 return;
             }
 
-            GoTo(current.NextNodeID);
+            if (string.IsNullOrWhiteSpace(cozyEvent.EventName))
+            {
+                Debug.LogWarning("Tried to invoke a Cozy event without a name.");
+                return;
+            }
+
+            EventInvoked?.Invoke(cozyEvent);
         }
     }
 }

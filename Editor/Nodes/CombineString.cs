@@ -1,16 +1,30 @@
-using UnityEngine;
+using ShaderFactory.CozyGraphToolkit.Runtime;
+using System;
+using Unity.GraphToolkit.Editor;
 
-public class CombineString : MonoBehaviour
+namespace ShaderFactory.CozyGraphToolkit.Editor
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
+    /// <summary>
+    /// A core value node that joins First and Second into Result.
+    /// </summary>
+    [Serializable]
+    [Node("Cozy Nodes/Value", null, "Combine String")]
+    public class CombineString : CozyEditorNode
     {
-        
-    }
+        public override RuntimeCozyNode CreateRuntimeNode(string nodeID, string nodeType, RuntimeCozyGraph graph)
+        {
+            CombineStringRuntime runtimeCombineString = new CombineStringRuntime();
+            runtimeCombineString.NodeID = nodeID;
+            runtimeCombineString.NodeType = nodeType;
+            runtimeCombineString.Graph = graph;
+            return runtimeCombineString;
+        }
 
-    // Update is called once per frame
-    void Update()
-    {
-        
+        protected override void OnDefinePorts(IPortDefinitionContext context)
+        {
+            context.AddInputPort<string>("First").Build();
+            context.AddInputPort<string>("Second").Build();
+            context.AddOutputPort<string>("Result").Build();
+        }
     }
 }

@@ -1,12 +1,11 @@
-using ShaderFactory.CozyGraphToolkit.Runtime;
 using System;
 using Unity.GraphToolkit.Editor;
-using Unity.VisualScripting;
 
 namespace ShaderFactory.CozyGraphToolkit.Editor
 {
     [Serializable]
-    public class StartNode : Node
+    [Node("Cozy Nodes/Flow", null, "Start Node")]
+    public class StartNode : CozyEditorNode
     {
         public object EvaluateEditor()
         {
@@ -33,6 +32,11 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
             context.AddOutputPort("Execute").Build();
             
 
+        }
+
+        public override bool IsFlowOutputPort(string portName)
+        {
+            return portName == "Execute";
         }
     }
 }

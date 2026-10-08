@@ -1,9 +1,11 @@
 using ShaderFactory.CozyGraphToolkit.Runtime;
+using System;
 using System.Collections.Generic;
 using Unity.GraphToolkit.Editor;
 
 namespace ShaderFactory.CozyGraphToolkit.Editor
 {
+    [Serializable]
     public class CozyEditorNode : Node
     {
         public List<CozyRuntimePort> runtimePorts;
@@ -13,21 +15,24 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
             return new RuntimeCozyNode(_nodeID, _nodeType, _graph);
         }
 
-        public void CreateRuntimePorts()
+        /// <summary>
+        /// Tells the importer whether an input is an execution-flow port.
+        /// Flow ports move execution forward, so they are not imported as values.
+        /// Value inputs keep returning false and are evaluated on demand at runtime.
+        /// </summary>
+        public virtual bool IsFlowInputPort(string portName)
         {
-            /*
-            // Convert all INPUT ports into RuntimeCozyPorts.
-            foreach (IPort port in node.GetInputPorts())
-            {
-                r.RegisterPort(port.name, GetPortValue(port, nodesIdDictionary), false);
-            }
+            return false;
+        }
 
-            // Convert also all OUTPUT ports into RuntimeCozyPorts.
-            foreach (IPort port in node.GetOutputPorts())
-            {
-                r.RegisterPort(port.name, GetPortValue(port, nodesIdDictionary), true);
-            }
-            */
+        /// <summary>
+        /// Tells the importer whether an output is an execution-flow port.
+        /// A flow output is saved as a named connection, such as "out", "True",
+        /// or "False". Value outputs keep returning false.
+        /// </summary>
+        public virtual bool IsFlowOutputPort(string portName)
+        {
+            return false;
         }
 
         protected override void OnDefinePorts(IPortDefinitionContext c)

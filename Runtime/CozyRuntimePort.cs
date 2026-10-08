@@ -12,6 +12,12 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
 
         public string Key;
 
+        /// <summary>
+        /// Assembly-qualified type expected by this port. The importer records it so
+        /// runtime evaluation can apply the same permitted conversions as the Editor.
+        /// </summary>
+        public string ValueTypeName;
+
         private RuntimeCozyNode node;
 
         // UNITY-SERIALIZABLE TYPE FIELDS  
@@ -19,10 +25,11 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
         public float floatValue;
         public int intValue;
         public bool boolValue;
-        public CozyRuntimePort connectedPort;
+        public RuntimePortReference portReference;
+        public RuntimeVariableReference variableReference;
 
         /// <summary> Defines the types of values a port can have. If a node is connect, value type will be port. </summary>
-        public enum PortType { String, Float, Int, Bool, Port, SpecialCode}
+        public enum PortType { String, Float, Int, Bool, Port, Variable, SpecialCode}
 
         /// <summary> Stores which value should be used. (What is connected to thi) </summary>
         public PortType type;
@@ -57,11 +64,17 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
                 stringValue = s;
                 ImportMessage = "String";
             }
-            else if (_value is CozyRuntimePort crp)
+            else if (_value is RuntimePortReference reference)
             {
                 type = PortType.Port;
-                connectedPort = crp;
-                ImportMessage = "Connected Node";
+                portReference = reference;
+                ImportMessage = "Connected Port";
+            }
+            else if (_value is RuntimeVariableReference referenceToVariable)
+            {
+                type = PortType.Variable;
+                variableReference = referenceToVariable;
+                ImportMessage = "Blackboard Variable";
             }
             /*else if (_value is RuntimeIVariable riv)
             {
@@ -95,16 +108,49 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
                 PortType.Int => intValue,
                 PortType.String => stringValue,
                 PortType.Bool => boolValue,
-                PortType.Port => EvaluateConnectedPort(),
                 _ => null
             };
         }
 
-        private object EvaluateConnectedPort()
+        public Type GetValueType()
         {
-            // CozyRuntimePort _connectedPort = connectedPort;
-            return connectedPort.GetValue();
-            // return "PORT, CAN'T RETRIEVE VALUE YET";
+            if (string.IsNullOrEmpty(ValueTypeName))
+                return null;
+
+            return Type.GetType(ValueTypeName);
+        }
+    }
+
+    /// <summary>
+    /// Points from an input port to the output port that supplies its value.
+    /// The runtime resolves this reference only when a node asks for the input.
+    /// </summary>
+    [Serializable]
+    public class RuntimePortReference
+    {
+        public string nodeID;
+        public string portName;
+
+        public RuntimePortReference(string sourceNodeID, string sourcePortName)
+        {
+            nodeID = sourceNodeID;
+            portName = sourcePortName;
+        }
+    }
+
+    /// <summary>
+    /// Identifies a Blackboard variable without storing its current value in the
+    /// imported graph asset. RuntimeCozyNode resolves this through the CozyManager
+    /// that is currently running the graph.
+    /// </summary>
+    [Serializable]
+    public class RuntimeVariableReference
+    {
+        public string variableID;
+
+        public RuntimeVariableReference(string variableID)
+        {
+            this.variableID = variableID;
         }
     }
 

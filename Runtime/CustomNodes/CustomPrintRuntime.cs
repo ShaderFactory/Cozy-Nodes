@@ -1,13 +1,16 @@
+using System;
 using ShaderFactory.CozyGraphToolkit.Runtime;
 using UnityEngine;
 
+[Serializable]
 public class CustomPrintRuntime : RuntimeCozyNode
 {
     public string evaluatedMessage;
 
-    public override object GetValue(CozyRuntimePort _port)
+    public override object GetValue(CozyRuntimePort _port, CozyManager cozyManager)
     {
-        object result = _port.GetValue();
+        // RuntimeCozyNode resolves both direct values and connected values.
+        object result = base.GetValue(_port, cozyManager);
         if (result == null)
         {
             Debug.LogWarning("_port.GetValue() == null !");
@@ -15,10 +18,13 @@ public class CustomPrintRuntime : RuntimeCozyNode
         return result;
     }
 
-    public override object Run()
+    public override CozyNodeExecutionResult Run(CozyManager cozyManager)
     {
-        var evaluatedMessage = GetValue(GetPortByName("Message"));
+        // GetInputValue also follows a connection to another node when needed.
+        object evaluatedMessage = GetInputValue("Message", cozyManager);
         Debug.Log(evaluatedMessage);
-        return null;    
+
+        // Print is a flow node. After printing, it follows its named execution output.
+        return CozyNodeExecutionResult.ContinueWith("out");
     }
 }

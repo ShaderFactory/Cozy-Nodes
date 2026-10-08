@@ -1,0 +1,12 @@
+/*
+ * This stylesheet is attached only to PrintNode through Graph Toolkit's
+ * NodeAttribute. It does not modify Graph Toolkit or any other Cozy node.
+ */
+.ge-node {
+    min-width: 360px;
+}
+
+/* Leave enough horizontal room for a dialogue-sized Message field. */
+.ge-port .unity-base-text-field {
+    min-width: 220px;
+}

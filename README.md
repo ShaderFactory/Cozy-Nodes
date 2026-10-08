@@ -11,7 +11,7 @@ game-specific systems created on top of the package.
 > already includes Graph Toolkit in the Editor, so do not install the old
 > experimental Graph Toolkit package separately.
 
-## Installation
+## 💻 Installation
 
 1. In Unity, open **Window > Package Management > Package Manager**.
 2. Select **+ > Install package from git URL...**.
@@ -20,8 +20,8 @@ game-specific systems created on top of the package.
 
 Package identifier: `com.shaderfactory.cozygraphtoolkit`
 
-## Your first graph
-
+## 📝 How to use
+### 📈 Making your first graph.
 1. Create a Cozy Graph from **Assets > Create > Shader Factory > Cozy Graph Toolkit > Graph**.
 2. Open the graph and create `Start Node`, `Print Node`, and `End Node`.
 3. Connect `Start Node → Print Node → End Node`.
@@ -29,58 +29,10 @@ Package identifier: `com.shaderfactory.cozygraphtoolkit`
    **Runtime Graph** field.
 5. Enter Play Mode. The text in the Print Node appears in the Unity Console.
 
-## Node reference
-
-### Flow nodes
-
-| Node | What it does |
-| --- | --- |
-| **Start Node** | Begins graph execution. A graph normally has one Start Node. |
-| **End Node** | Ends the current execution path. |
-| **Print Node** | Writes its **Message** value to the Unity Console, then continues through **out**. The Message field supports multiple lines. |
-| **Branch Node** | Reads a boolean **Condition** and continues through either **True** or **False**. |
-| **Wait For Trigger** | Pauses execution until `CozyManager.Trigger` receives the matching **Trigger Name**. Useful for UI buttons, dialogue choices, and gameplay events. |
-| **Invoke Event** | Notifies game code through `CozyManager.EventInvoked`. The graph sends an **Event Name** and optional **Payload**; the game decides how to react. |
-| **Set Variable** | Changes a Blackboard variable for this running graph only. Connect the Blackboard variable node to **Variable** and its new value to **Value**. |
-
-### Value nodes
-
-| Node | What it does |
-| --- | --- |
-| **Combine String** | Joins **First** and **Second** into a string **Result**. |
-| **Add Integer** | Adds integer inputs **A** and **B**, then provides the integer **Result**. Useful for gold, counters, inventory quantities, levels, and quests. |
-| **Blackboard Variable** | A built-in Graph Toolkit node created from a Blackboard variable. It provides the variable's current runtime value to connected Cozy Nodes. |
-
-## Automatic value conversions
-
-Cozy Nodes keeps ports typed, but permits a small set of safe conversions when a
-value connection needs them. For example, an `Add Integer` result can connect
-directly to the string **Message** input on a Print Node.
-
-| From | To | Result |
-| --- | --- | --- |
-| `int` | `string` | Text such as `42` |
-| `float` | `string` | Text such as `3.5` |
-| `bool` | `string` | Text such as `True` or `False` |
-| `int` | `float` | A non-lossy numeric conversion |
-
-Other type pairs stay disconnected in the Editor. A generic node such as
-`Set Variable` accepts different source types, but displays an error on the node
-when the connected value cannot be stored in its chosen Blackboard variable.
-
-> [!tip] Adding node images
-> Each node has a clear entry in this reference. When screenshots are ready, expand
-> the relevant row into a dedicated subsection and add its image there. No code or
-> package change is needed.
-
-## Blackboard variables
-
-Create variables in the Graph Toolkit Blackboard. Their defaults are stored in the
-graph asset, while each `CozyManager` creates its own temporary runtime copy when
-the graph starts.
-
-This means a `Set Variable` node can change a value for one running graph without
-editing the graph asset or affecting another Manager.
+## Nodes
+### Set Variable Node
+Changes a Blackboard variable for this running graph only. Connect the Blackboard variable node to **Variable** and its new value to **Value**.
+<img width="900" height="200" alt="image" src="https://github.com/ShaderFactory/Cozy-Nodes/blob/main/Documentation~/Images/image-node-setvariable.png?raw=true" />
 
 ## Development status
 

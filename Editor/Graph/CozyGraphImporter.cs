@@ -9,7 +9,7 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
 {
     // Increment this version whenever imported runtime data changes. Unity will then
     // rebuild existing .cozygraph assets instead of running stale runtime data.
-    [ScriptedImporter(17, CozyGraph.AssetExtension)]
+    [ScriptedImporter(20, CozyGraph.AssetExtension)]
     public class CozyGraphImporter : ScriptedImporter
     {
         public override void OnImportAsset(AssetImportContext ctx)

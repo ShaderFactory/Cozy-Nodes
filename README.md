@@ -39,10 +39,17 @@ Changes a Blackboard variable for this running graph only. Connect the Blackboar
 
 </details>
 
+<details>
+<summary>Greater Than Integer Node</summary>
+
+Compares integer inputs **A** and **B**. Its boolean **Result** is true when **A** is greater than **B**, and can connect directly to a Branch Node's **Condition**.
+
+</details>
+
 ## Development status
 
 > [!warning]
-> Cozy Nodes is under active development. Flow execution, triggers, events,
-> Blackboard reads and runtime variable writes are available. Save-data nodes,
-> numeric comparisons, floating-point math, and the public API for custom game
-> nodes are still to come.
+> Cozy Nodes is under active development. Execution, triggers, events,
+> Blackboard reads and runtime variable writes, integer utilities, and the public
+> API for custom game nodes are available. Enums, save-data nodes, and additional
+> floating-point utilities are planned next.

@@ -3,12 +3,11 @@ using System;
 namespace ShaderFactory.CozyGraphToolkit.Runtime
 {
     /// <summary>
-    /// Runtime behavior for Add Integer. It resolves both inputs through the
-    /// standard recursive evaluator, so each input can be a direct number,
-    /// Blackboard variable or output from another value node.
+    /// Runtime behavior for Greater Than Integer. It is a value node and evaluates
+    /// only when another node requests its Result output.
     /// </summary>
     [Serializable]
-    public class AddIntegerRuntime : RuntimeCozyNode
+    public class GreaterThanIntegerRuntime : RuntimeCozyNode
     {
         public override object GetValue(CozyRuntimePort port, CozyManager cozyManager)
         {
@@ -17,7 +16,7 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
 
             int firstValue = CozyIntegerValue.ReadInput(this, "A", cozyManager);
             int secondValue = CozyIntegerValue.ReadInput(this, "B", cozyManager);
-            return firstValue + secondValue;
+            return firstValue > secondValue;
         }
     }
 }

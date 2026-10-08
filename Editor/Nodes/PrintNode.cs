@@ -6,8 +6,9 @@ using Unity.GraphToolkit.Editor;
 namespace ShaderFactory.CozyGraphToolkit.Editor
 {
     [Serializable]
+    [UseWithGraph(typeof(CozyGraph))]
     [Node(
-        "Cozy Nodes/Flow",
+        "Cozy Nodes/Debug",
         null,
         "Print Node",
         "Packages/com.shaderfactory.cozygraphtoolkit/Editor/Styles/PrintNode.uss")]

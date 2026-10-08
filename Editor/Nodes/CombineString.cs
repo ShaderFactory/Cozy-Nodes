@@ -8,7 +8,8 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
     /// A core value node that joins First and Second into Result.
     /// </summary>
     [Serializable]
-    [Node("Cozy Nodes/Value", null, "Combine String")]
+    [UseWithGraph(typeof(CozyGraph))]
+    [Node("Cozy Nodes/Utilities", null, "Combine String")]
     public class CombineString : CozyEditorNode
     {
         public override RuntimeCozyNode CreateRuntimeNode(string nodeID, string nodeType, RuntimeCozyGraph graph)

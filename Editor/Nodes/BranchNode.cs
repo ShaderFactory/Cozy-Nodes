@@ -9,7 +9,8 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
     /// This is a flow node: Condition is data, while True and False are flow outputs.
     /// </summary>
     [Serializable]
-    [Node("Cozy Nodes/Flow", null, "Branch Node")]
+    [UseWithGraph(typeof(CozyGraph))]
+    [Node("Cozy Nodes/Control", null, "Branch")]
     public class BranchNode : CozyEditorNode
     {
         public override RuntimeCozyNode CreateRuntimeNode(string nodeID, string nodeType, RuntimeCozyGraph graph)

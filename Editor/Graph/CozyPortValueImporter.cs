@@ -24,10 +24,7 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
                 return default;
 
             if (!port.IsConnected)
-            {
-                port.TryGetValue(out object result);
-                return result;
-            }
+                return GetDirectPortValue(port);
 
             IPort connectedPort = port.FirstConnectedPort;
             INode connectedNode = connectedPort.GetNode();
@@ -84,6 +81,36 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
             }
 
             return arguments[0];
+        }
+
+        /// <summary>
+        /// Reads a value written directly into a node input field.
+        ///
+        /// Graph Toolkit exposes IPort.TryGetValue as a generic method. Reading
+        /// it as object can lose the value for reflected ports, because their UI
+        /// field is registered with its concrete type such as string or int.
+        /// Invoke the method with the port's real data type instead, then return
+        /// the boxed value for Cozy's serializable runtime representation.
+        /// </summary>
+        private static object GetDirectPortValue(IPort port)
+        {
+            if (port.DataType == null)
+                return null;
+
+            MethodInfo tryGetValueMethod = typeof(IPort)
+                .GetMethods()
+                .First(method => method.Name == "TryGetValue" && method.IsGenericMethodDefinition);
+
+            MethodInfo typedTryGetValueMethod = tryGetValueMethod.MakeGenericMethod(port.DataType);
+
+            object defaultValue = null;
+            if (port.DataType.IsValueType)
+                defaultValue = Activator.CreateInstance(port.DataType);
+
+            object[] arguments = { defaultValue };
+            bool wasRead = (bool)typedTryGetValueMethod.Invoke(port, arguments);
+
+            return wasRead ? arguments[0] : null;
         }
 
         /// <summary>

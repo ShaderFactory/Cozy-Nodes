@@ -9,7 +9,8 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
     /// The game subscribes to CozyManager.EventInvoked and decides how to react.
     /// </summary>
     [Serializable]
-    [Node("Cozy Nodes/Flow", null, "Invoke Event")]
+    [UseWithGraph(typeof(CozyGraph))]
+    [Node("Cozy Nodes/Events & Triggers", null, "Invoke Event")]
     public class InvokeEventNode : CozyEditorNode
     {
         public override RuntimeCozyNode CreateRuntimeNode(string nodeID, string nodeType, RuntimeCozyGraph graph)

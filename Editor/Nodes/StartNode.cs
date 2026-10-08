@@ -4,7 +4,8 @@ using Unity.GraphToolkit.Editor;
 namespace ShaderFactory.CozyGraphToolkit.Editor
 {
     [Serializable]
-    [Node("Cozy Nodes/Flow", null, "Start Node")]
+[UseWithGraph(typeof(CozyGraph))]
+[Node("Cozy Nodes/Control", null, "Start Node")]
     public class StartNode : CozyEditorNode
     {
         public object EvaluateEditor()

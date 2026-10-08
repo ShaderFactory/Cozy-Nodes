@@ -9,7 +9,8 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
     /// The name can be typed into the node or supplied by another value node.
     /// </summary>
     [Serializable]
-    [Node("Cozy Nodes/Flow", null, "Wait For Trigger")]
+    [UseWithGraph(typeof(CozyGraph))]
+    [Node("Cozy Nodes/Events & Triggers", null, "Wait For Trigger")]
     public class WaitForTriggerNode : CozyEditorNode
     {
         public override RuntimeCozyNode CreateRuntimeNode(string nodeID, string nodeType, RuntimeCozyGraph graph)

@@ -5,28 +5,28 @@ using Unity.GraphToolkit.Editor;
 namespace ShaderFactory.CozyGraphToolkit.Editor
 {
     /// <summary>
-    /// Adds two whole-number values. This is a value node, so it calculates Result
-    /// only when another node requests that output.
+    /// Compares two whole-number values and provides true when A is greater than B.
+    /// Its Result can connect directly to a Branch Node's Condition input.
     /// </summary>
     [Serializable]
     [UseWithGraph(typeof(CozyGraph))]
-    [Node("Cozy Nodes/Utilities/Math", null, "Add Integer")]
-    public class AddIntegerNode : CozyEditorNode
+    [Node("Cozy Nodes/Utilities/Math", null, "Greater Than Integer")]
+    public class GreaterThanIntegerNode : CozyEditorNode
     {
         public override RuntimeCozyNode CreateRuntimeNode(string nodeID, string nodeType, RuntimeCozyGraph graph)
         {
-            AddIntegerRuntime runtimeAddInteger = new AddIntegerRuntime();
-            runtimeAddInteger.NodeID = nodeID;
-            runtimeAddInteger.NodeType = nodeType;
-            runtimeAddInteger.Graph = graph;
-            return runtimeAddInteger;
+            GreaterThanIntegerRuntime runtimeComparison = new GreaterThanIntegerRuntime();
+            runtimeComparison.NodeID = nodeID;
+            runtimeComparison.NodeType = nodeType;
+            runtimeComparison.Graph = graph;
+            return runtimeComparison;
         }
 
         protected override void OnDefinePorts(IPortDefinitionContext context)
         {
             context.AddInputPort<int>("A").WithDefaultValue(0).Build();
             context.AddInputPort<int>("B").WithDefaultValue(0).Build();
-            context.AddOutputPort<int>("Result").Build();
+            context.AddOutputPort<bool>("Result").Build();
         }
     }
 }

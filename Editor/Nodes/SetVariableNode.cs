@@ -10,6 +10,7 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
     /// that should be stored through Value.
     /// </summary>
     [Serializable]
+    [UseWithGraph(typeof(CozyGraph))]
     [Node("Cozy Nodes/Variables", null, "Set Variable")]
     public class SetVariableNode : CozyEditorNode
     {

@@ -4,7 +4,8 @@ using Unity.GraphToolkit.Editor;
 
 
 [Serializable]
-[Node("Cozy Nodes/Flow", null, "End Node")]
+[UseWithGraph(typeof(CozyGraph))]
+[Node("Cozy Nodes/Control", null, "End Node")]
 public class EndNode : CozyEditorNode
 {
     protected override void OnDefinePorts(IPortDefinitionContext context)

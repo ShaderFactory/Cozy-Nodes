@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace ShaderFactory.CozyGraphToolkit.Runtime
@@ -25,6 +26,12 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
 
         private CozyGraphRunner graphRunner;
 
+        // Custom nodes may hold temporary state while one graph execution is
+        // running. Keep those instances on the Manager, never on the imported
+        // asset, so two Managers running the same graph stay independent.
+        private readonly Dictionary<string, CozyNode> customNodeInstances =
+            new Dictionary<string, CozyNode>();
+
         private void Awake()
         {
             graphRunner = new CozyGraphRunner(this);
@@ -33,7 +40,28 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
         private void Start()
         {
             RuntimeVariables = new CozyRuntimeVariables(RuntimeGraph?.VariableDefinitions);
+            customNodeInstances.Clear();
             graphRunner.Start(RuntimeGraph);
+        }
+
+        /// <summary>
+        /// Gets the game-authored node instance associated with one imported node.
+        /// This is internal package plumbing; custom nodes receive their behavior
+        /// through CozyNodeContext rather than accessing this method directly.
+        /// </summary>
+        internal CozyNode GetOrCreateCustomNode(string nodeID, Type nodeType)
+        {
+            if (string.IsNullOrWhiteSpace(nodeID) || nodeType == null)
+                return null;
+
+            if (customNodeInstances.TryGetValue(nodeID, out CozyNode existingNode))
+                return existingNode;
+
+            CozyNode newNode = CozyNodeReflection.CreateNodeInstance(nodeType);
+            if (newNode != null)
+                customNodeInstances.Add(nodeID, newNode);
+
+            return newNode;
         }
 
         /// <summary>

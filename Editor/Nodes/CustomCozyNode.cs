@@ -1,9 +1,10 @@
 using System;
-using ShaderFactory.CozyGraphToolkit.Runtime;
+using System.Reflection;
+using ShaderFactory.CozyNodes.Runtime;
 using Unity.GraphToolkit.Editor;
 using UnityEngine;
 
-namespace ShaderFactory.CozyGraphToolkit.Editor
+namespace ShaderFactory.CozyNodes.Editor
 {
     /// <summary>
     /// Graph Toolkit model used internally for every game-authored CozyNode.
@@ -16,7 +17,29 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
     {
         [SerializeField] private string customNodeTypeName;
 
+        [NonSerialized] private string definedInputListLayout;
+
+        private static readonly MethodInfo TryGetOptionValueMethod = FindTryGetOptionValueMethod();
+
         public string CustomNodeTypeName => customNodeTypeName;
+
+        protected override bool TryGetDefaultColor(out Color color)
+        {
+            CozyNodeDefinition definition = GetDefinition();
+            if (definition != null && definition.HasAccentColor)
+            {
+                color = definition.AccentColor;
+                return true;
+            }
+
+            if (definition != null && definition.HasColor)
+            {
+                color = definition.Color;
+                return true;
+            }
+
+            return base.TryGetDefaultColor(out color);
+        }
 
         /// <summary>
         /// Configures this adapter before it is added to a graph. Graph Toolkit
@@ -56,7 +79,24 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
             runtimeNode.NodeType = nodeType;
             runtimeNode.Graph = graph;
             runtimeNode.CustomNodeTypeName = customNodeTypeName;
+            CopyOptionsToRuntimeNode(runtimeNode);
             return runtimeNode;
+        }
+
+        protected override void OnDefineOptions(IOptionDefinitionContext context)
+        {
+            CozyNodeDefinition definition = GetDefinition();
+            if (definition == null)
+                return;
+
+            foreach (CozyOptionDefinition option in definition.Options)
+            {
+                context.AddOption(option.Name, option.ValueType)
+                    .WithDisplayName(option.DisplayName)
+                    .WithTooltip(option.Tooltip)
+                    .WithDefaultValue(option.DefaultValue)
+                    .Build();
+            }
         }
 
         protected override void OnDefinePorts(IPortDefinitionContext context)
@@ -71,11 +111,19 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
             foreach (CozyPortDefinition input in definition.Inputs)
                 AddInputPort(context, input);
 
+            foreach (CozyInputListDefinition inputList in definition.InputLists)
+                AddInputListPorts(context, definition, inputList);
+
+            // Flow paths come first on action nodes. This keeps the ordinary
+            // execution route readable and leaves value results, such as a For
+            // node's Index, at the end of the output section.
+            foreach (string flowOutputName in definition.FlowOutputs)
+                context.AddOutputPort(flowOutputName).Build();
+
             foreach (CozyPortDefinition output in definition.Outputs)
                 AddOutputPort(context, output);
 
-            foreach (string flowOutputName in definition.FlowOutputs)
-                context.AddOutputPort(flowOutputName).Build();
+            definedInputListLayout = GetInputListLayout(definition);
         }
 
         public override bool IsFlowInputPort(string portName)
@@ -90,21 +138,205 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
             return definition != null && definition.FlowOutputs.Contains(portName);
         }
 
+        /// <summary>
+        /// Rebuilds this node's ports when an option changes the number of ports
+        /// in an InputList. CozyGraph calls this after Graph Toolkit records an
+        /// option edit, so the option's serialized value is always the source of
+        /// truth for the node structure.
+        /// </summary>
+        internal void RefreshInputListPorts()
+        {
+            CozyNodeDefinition definition = GetDefinition();
+            if (definition == null || definition.InputLists.Count == 0)
+                return;
+
+            string currentLayout = GetInputListLayout(definition);
+            if (currentLayout == definedInputListLayout)
+                return;
+
+            WarnAboutRemovedInputListConnections(definition);
+            DefineNode();
+        }
+
         private CozyNodeDefinition GetDefinition()
         {
+            return CozyNodeReflection.GetDefinition(ResolveCustomNodeType());
+        }
+
+        /// <summary>
+        /// Gets the public CozyNode type represented by this adapter. Graph setup
+        /// uses this to create the same concrete adapter that the node library
+        /// uses, preserving Graph Toolkit copy and duplicate behavior.
+        /// </summary>
+        internal Type ResolveCustomNodeType()
+        {
             ConfigureGeneratedNodeType();
-            Type nodeType = CozyNodeReflection.FindNodeType(customNodeTypeName);
-            return CozyNodeReflection.GetDefinition(nodeType);
+            return CozyNodeReflection.FindNodeType(customNodeTypeName);
+        }
+
+        /// <summary>
+        /// Reads one authored option using the same path used during import. Entry
+        /// nodes use this for their event name, which is configuration rather than
+        /// a value port.
+        /// </summary>
+        internal object GetConfiguredOptionValue(string optionName)
+        {
+            CozyNodeDefinition definition = GetDefinition();
+            CozyOptionDefinition optionDefinition = definition?.FindOption(optionName);
+            if (optionDefinition == null)
+                return null;
+
+            return GetOptionValue(
+                GetNodeOptionByName(optionName),
+                optionDefinition);
         }
 
         private void ConfigureGeneratedNodeType()
         {
-            if (!string.IsNullOrWhiteSpace(customNodeTypeName))
-                return;
-
             Type generatedNodeType = GetCustomNodeType();
             if (generatedNodeType != null)
-                Configure(generatedNodeType);
+            {
+                // A generated adapter always knows its concrete game-node type.
+                // Refresh the saved assembly-qualified name when it changes, for
+                // example after the Cozy runtime assembly is renamed.
+                if (customNodeTypeName != generatedNodeType.AssemblyQualifiedName)
+                    Configure(generatedNodeType);
+
+                return;
+            }
+
+            // Older serialized instances can have no generated adapter. Keep
+            // their saved type name untouched because it is their only source.
+        }
+
+        private void AddInputListPorts(
+            IPortDefinitionContext context,
+            CozyNodeDefinition nodeDefinition,
+            CozyInputListDefinition inputList)
+        {
+            int inputCount = GetInputListCount(nodeDefinition, inputList);
+            for (int index = 0; index < inputCount; index++)
+            {
+                CozyPortDefinition port = new CozyPortDefinition();
+                port.Name = CozyNodeReflection.GetInputListPortName(inputList.Name, index);
+                port.DisplayName = inputList.DisplayName + " " + (index + 1);
+                port.Tooltip = inputList.Tooltip;
+                port.ValueType = inputList.ElementType;
+                port.IsInput = true;
+                port.DefaultValue = inputList.GetDefaultValue(index);
+                AddInputPort(context, port);
+            }
+        }
+
+        private int GetInputListCount(
+            CozyNodeDefinition nodeDefinition,
+            CozyInputListDefinition inputList)
+        {
+            int count = inputList.MinimumCount;
+            CozyOptionDefinition countOption = nodeDefinition.FindOption(inputList.CountOptionName);
+            if (countOption?.DefaultValue is int defaultCount)
+                count = defaultCount;
+
+            INodeOption graphToolkitOption = GetNodeOptionByName(inputList.CountOptionName);
+            if (graphToolkitOption != null && graphToolkitOption.TryGetValue(out int configuredCount))
+                count = configuredCount;
+
+            return Math.Clamp(count, inputList.MinimumCount, inputList.MaximumCount);
+        }
+
+        private string GetInputListLayout(CozyNodeDefinition definition)
+        {
+            if (definition.InputLists.Count == 0)
+                return string.Empty;
+
+            System.Text.StringBuilder layout = new System.Text.StringBuilder();
+            foreach (CozyInputListDefinition inputList in definition.InputLists)
+            {
+                layout.Append(inputList.Name);
+                layout.Append('=');
+                layout.Append(GetInputListCount(definition, inputList));
+                layout.Append(';');
+            }
+
+            return layout.ToString();
+        }
+
+        private void WarnAboutRemovedInputListConnections(CozyNodeDefinition definition)
+        {
+            foreach (CozyInputListDefinition inputList in definition.InputLists)
+            {
+                int retainedCount = GetInputListCount(definition, inputList);
+                int removedConnectionCount = 0;
+
+                foreach (IPort port in GetInputPorts())
+                {
+                    if (CozyNodeReflection.TryGetInputListPortIndex(
+                            inputList.Name,
+                            port.Name,
+                            out int index) &&
+                        index >= retainedCount &&
+                        port.IsConnected)
+                    {
+                        removedConnectionCount++;
+                    }
+                }
+
+                if (removedConnectionCount > 0)
+                {
+                    Debug.LogWarning(
+                        $"Reducing '{inputList.DisplayName}' on '{Title}' removes " +
+                        $"{removedConnectionCount} connected input(s).");
+                }
+            }
+        }
+
+        private void CopyOptionsToRuntimeNode(ReflectedCozyRuntimeNode runtimeNode)
+        {
+            CozyNodeDefinition definition = GetDefinition();
+            if (definition == null)
+                return;
+
+            foreach (CozyOptionDefinition optionDefinition in definition.Options)
+            {
+                INodeOption graphToolkitOption = GetNodeOptionByName(optionDefinition.Name);
+                object optionValue = GetOptionValue(graphToolkitOption, optionDefinition);
+                runtimeNode.RegisterOption(
+                    optionDefinition.Name,
+                    optionValue,
+                    optionDefinition.ValueType);
+            }
+        }
+
+        private static MethodInfo FindTryGetOptionValueMethod()
+        {
+            foreach (MethodInfo method in typeof(INodeOption).GetMethods())
+            {
+                if (method.Name == nameof(INodeOption.TryGetValue) &&
+                    method.IsGenericMethodDefinition)
+                {
+                    return method;
+                }
+            }
+
+            return null;
+        }
+
+        private static object GetOptionValue(
+            INodeOption graphToolkitOption,
+            CozyOptionDefinition optionDefinition)
+        {
+            if (graphToolkitOption == null || TryGetOptionValueMethod == null)
+                return optionDefinition.DefaultValue;
+
+            object fallbackValue = optionDefinition.DefaultValue;
+            if (fallbackValue == null && optionDefinition.ValueType.IsValueType)
+                fallbackValue = Activator.CreateInstance(optionDefinition.ValueType);
+
+            MethodInfo typedGetValue = TryGetOptionValueMethod.MakeGenericMethod(
+                optionDefinition.ValueType);
+            object[] arguments = { fallbackValue };
+            bool wasRead = (bool)typedGetValue.Invoke(graphToolkitOption, arguments);
+            return wasRead ? arguments[0] : optionDefinition.DefaultValue;
         }
 
         private void AddInputPort(IPortDefinitionContext context, CozyPortDefinition definition)

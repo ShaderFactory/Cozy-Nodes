@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace ShaderFactory.CozyGraphToolkit.Runtime
+namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Per-execution values copied from a graph's Blackboard definitions.

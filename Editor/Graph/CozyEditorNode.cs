@@ -1,14 +1,61 @@
-using ShaderFactory.CozyGraphToolkit.Runtime;
+using ShaderFactory.CozyNodes.Runtime;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Unity.GraphToolkit.Editor;
+using UnityEngine;
 
-namespace ShaderFactory.CozyGraphToolkit.Editor
+namespace ShaderFactory.CozyNodes.Editor
 {
     [Serializable]
     public class CozyEditorNode : Node
     {
         public List<CozyRuntimePort> runtimePorts;
+
+        public override void OnEnable()
+        {
+            base.OnEnable();
+
+            if (TryGetDefaultColor(out Color color))
+                DefaultColor = color;
+        }
+
+        /// <summary>
+        /// Gets the attribute-defined color for this node type. Assigning it to
+        /// Graph Toolkit's DefaultColor keeps a graph author's user-selected
+        /// ElementColor intact.
+        /// </summary>
+        protected virtual bool TryGetDefaultColor(out Color color)
+        {
+            CozyNodeAccentColorAttribute accentColorAttribute =
+                GetType().GetCustomAttribute<CozyNodeAccentColorAttribute>(true);
+
+            if (accentColorAttribute != null)
+            {
+                color = new Color(
+                    accentColorAttribute.Red,
+                    accentColorAttribute.Green,
+                    accentColorAttribute.Blue,
+                    accentColorAttribute.Alpha);
+                return true;
+            }
+
+            CozyNodeColorAttribute colorAttribute =
+                GetType().GetCustomAttribute<CozyNodeColorAttribute>(true);
+
+            if (colorAttribute == null)
+            {
+                color = default;
+                return false;
+            }
+
+            color = new Color(
+                colorAttribute.Red,
+                colorAttribute.Green,
+                colorAttribute.Blue,
+                colorAttribute.Alpha);
+            return true;
+        }
 
         public virtual RuntimeCozyNode CreateRuntimeNode(string _nodeID, string _nodeType, RuntimeCozyGraph _graph)
         {

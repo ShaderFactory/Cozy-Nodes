@@ -1,4 +1,4 @@
-namespace ShaderFactory.CozyGraphToolkit.Runtime
+namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Implemented by a runtime node that pauses until it accepts a named trigger.

@@ -1,6 +1,6 @@
 using System;
 
-namespace ShaderFactory.CozyGraphToolkit.Runtime
+namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Serializable port key/value pair with typed fields

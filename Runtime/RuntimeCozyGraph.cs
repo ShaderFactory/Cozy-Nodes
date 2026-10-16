@@ -1,11 +1,22 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace ShaderFactory.CozyGraphToolkit.Runtime
+namespace ShaderFactory.CozyNodes.Runtime
 {
     public class RuntimeCozyGraph : ScriptableObject
     {
-        public string EntryNodeID;
+        /// <summary>
+        /// Stable identity of the authored Graph Toolkit graph. Runtime code does
+        /// not depend on Graph Toolkit; the Editor uses this only to match a
+        /// running graph to its open authoring window for execution visualization.
+        /// </summary>
+        public string SourceGraphID;
+
+        /// <summary>
+        /// All places where this graph can begin. A graph can have one On Start
+        /// entry and any number of named Custom Event entries.
+        /// </summary>
+        [SerializeReference] public List<RuntimeCozyGraphEntry> Entries = new();
 
         [SerializeReference] public List<RuntimeCozyNode> AllNodes = new();
 
@@ -14,6 +25,32 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
         /// copies these defaults into CozyRuntimeVariables when execution begins.
         /// </summary>
         [SerializeReference] public List<RuntimeCozyVariableDefinition> VariableDefinitions = new();
+
+        /// <summary>
+        /// Finds one imported entry. On Start has no caller-provided name;
+        /// Custom Event entries are identified by their authored event name.
+        /// </summary>
+        public bool TryGetEntry(
+            CozyGraphEntryKind kind,
+            string entryName,
+            out RuntimeCozyGraphEntry entry)
+        {
+            foreach (RuntimeCozyGraphEntry candidate in Entries)
+            {
+                if (candidate == null || candidate.Kind != kind)
+                    continue;
+
+                if (kind != CozyGraphEntryKind.CustomEvent ||
+                    string.Equals(candidate.Name, entryName, System.StringComparison.Ordinal))
+                {
+                    entry = candidate;
+                    return true;
+                }
+            }
+
+            entry = null;
+            return false;
+        }
 
     }
 }

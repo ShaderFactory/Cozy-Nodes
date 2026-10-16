@@ -1,7 +1,8 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
-namespace ShaderFactory.CozyGraphToolkit.Runtime
+namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Runtime bridge for a game-authored CozyNode. It owns no game behavior of
@@ -16,6 +17,13 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
         /// imported runtime asset independent from the game's concrete assembly.
         /// </summary>
         public string CustomNodeTypeName;
+
+        /// <summary>
+        /// Values chosen in the node's Options section when the graph was
+        /// imported. They stay on the runtime node so each graph instance keeps
+        /// its own configuration for the same authored CozyNode class.
+        /// </summary>
+        public List<RuntimeCozyNodeOption> Options = new List<RuntimeCozyNodeOption>();
 
         public override object GetValue(CozyRuntimePort port, CozyManager cozyManager)
         {
@@ -38,6 +46,13 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
 
         public override CozyNodeExecutionResult Run(CozyManager cozyManager)
         {
+            return Run(cozyManager, null);
+        }
+
+        public override CozyNodeExecutionResult Run(
+            CozyManager cozyManager,
+            string enteredFlowInputName)
+        {
             CozyNode customNode = GetCustomNode(cozyManager);
             if (customNode == null)
             {
@@ -45,7 +60,10 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
                     $"Could not create custom Cozy node '{CustomNodeTypeName}'.");
             }
 
-            CozyNodeContext context = new CozyNodeContext(this, cozyManager);
+            CozyNodeContext context = new CozyNodeContext(
+                this,
+                cozyManager,
+                enteredFlowInputName);
             CozyNodeExecutionResult result = customNode.Execute(context);
             if (result == null)
             {
@@ -54,6 +72,47 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
             }
 
             return result;
+        }
+
+        public override void CancelFlowScope(CozyManager cozyManager)
+        {
+            CozyNode customNode = GetCustomNode(cozyManager);
+            customNode?.CancelFlowScope();
+        }
+
+        /// <summary>
+        /// Adds or replaces an imported node option.
+        /// </summary>
+        public void RegisterOption(string key, object value, Type valueType)
+        {
+            foreach (RuntimeCozyNodeOption option in Options)
+            {
+                if (option.Key != key)
+                    continue;
+
+                option.SetValue(value, valueType);
+                return;
+            }
+
+            RuntimeCozyNodeOption newOption = new RuntimeCozyNodeOption();
+            newOption.Key = key;
+            newOption.SetValue(value, valueType);
+            Options.Add(newOption);
+        }
+
+        public override bool TryGetOptionValue(string optionName, out object value)
+        {
+            foreach (RuntimeCozyNodeOption option in Options)
+            {
+                if (option.Key != optionName)
+                    continue;
+
+                value = option.GetValue();
+                return value != null;
+            }
+
+            value = null;
+            return false;
         }
 
         private CozyNode GetCustomNode(CozyManager cozyManager)

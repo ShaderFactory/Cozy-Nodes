@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 
-namespace ShaderFactory.CozyGraphToolkit.Runtime
+namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Defines the small, explicit set of implicit conversions that Cozy Nodes

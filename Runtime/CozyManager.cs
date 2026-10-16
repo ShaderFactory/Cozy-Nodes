@@ -2,12 +2,13 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace ShaderFactory.CozyGraphToolkit.Runtime
+namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Unity-facing entry point for one Cozy graph. It exposes the small public API
     /// used by scenes and game code, while CozyGraphRunner owns execution details.
     /// </summary>
+    [AddComponentMenu("Cozy Nodes/Graph Manager")]
     public class CozyManager : MonoBehaviour
     {
         public RuntimeCozyGraph RuntimeGraph;
@@ -24,6 +25,20 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
         /// </summary>
         public event Action<CozyEvent> EventInvoked;
 
+        /// <summary>
+        /// Raised immediately before one flow node executes. It is primarily used
+        /// by the Editor execution visualizer, but remains runtime-safe so game
+        /// code can also observe graph execution without an Editor dependency.
+        /// </summary>
+        public event Action<RuntimeCozyGraph, string> FlowNodeExecuting;
+
+        /// <summary>
+        /// Package-wide version of <see cref="FlowNodeExecuting"/>. Editor tooling
+        /// uses this to subscribe before a scene starts, so the first executed
+        /// node is visible even when a graph begins immediately in Start.
+        /// </summary>
+        public static event Action<CozyManager, RuntimeCozyGraph, string> AnyFlowNodeExecuting;
+
         private CozyGraphRunner graphRunner;
 
         // Custom nodes may hold temporary state while one graph execution is
@@ -32,16 +47,33 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
         private readonly Dictionary<string, CozyNode> customNodeInstances =
             new Dictionary<string, CozyNode>();
 
+        // Fast Enter Play Mode can preserve static event subscribers. Each Play
+        // session starts with a clean observer list; Editor tooling subscribes
+        // again before the first scene loads.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStaticExecutionObservers()
+        {
+            AnyFlowNodeExecuting = null;
+        }
+
         private void Awake()
         {
             graphRunner = new CozyGraphRunner(this);
+            graphRunner.FlowNodeExecuting += HandleFlowNodeExecuting;
+        }
+
+        private void OnDestroy()
+        {
+            if (graphRunner != null)
+                graphRunner.FlowNodeExecuting -= HandleFlowNodeExecuting;
         }
 
         private void Start()
         {
             RuntimeVariables = new CozyRuntimeVariables(RuntimeGraph?.VariableDefinitions);
             customNodeInstances.Clear();
-            graphRunner.Start(RuntimeGraph);
+            if (graphRunner.Initialize(RuntimeGraph))
+                graphRunner.RunOnStart();
         }
 
         /// <summary>
@@ -71,6 +103,30 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
         public void Trigger(string triggerName)
         {
             graphRunner.Trigger(triggerName);
+        }
+
+        /// <summary>
+        /// Starts the named Custom Event entry authored in this graph. This is a
+        /// graph entry point, not a signal for a Wait for Trigger node.
+        /// </summary>
+        public bool RunCustomEvent(string eventName)
+        {
+            if (graphRunner == null)
+            {
+                Debug.LogWarning("Cozy Graph is not ready yet.");
+                return false;
+            }
+
+            return graphRunner.RunCustomEvent(eventName);
+        }
+
+        private void HandleFlowNodeExecuting(RuntimeCozyNode node)
+        {
+            if (RuntimeGraph == null || node == null || string.IsNullOrEmpty(node.NodeID))
+                return;
+
+            FlowNodeExecuting?.Invoke(RuntimeGraph, node.NodeID);
+            AnyFlowNodeExecuting?.Invoke(this, RuntimeGraph, node.NodeID);
         }
 
         /// <summary>

@@ -1,4 +1,4 @@
-namespace ShaderFactory.CozyGraphToolkit.Runtime
+namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Runtime-only notification sent from a Cozy graph to subscribed game code.

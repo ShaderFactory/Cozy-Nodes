@@ -1,7 +1,17 @@
 using System;
 
-namespace ShaderFactory.CozyGraphToolkit.Runtime
+namespace ShaderFactory.CozyNodes.Runtime
 {
+    /// <summary>
+    /// Describes when a graph entry is started. Entry nodes declare the places
+    /// where execution can begin; they are not executable nodes themselves.
+    /// </summary>
+    public enum CozyGraphEntryKind
+    {
+        OnStart,
+        CustomEvent
+    }
+
     /// <summary>
     /// Describes where a game node appears in Cozy Nodes' type picker.
     /// This metadata is intentionally runtime-safe so the same class can be
@@ -54,6 +64,143 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
     }
 
     /// <summary>
+    /// Makes a field into a node option. Options configure one node instance and
+    /// are stored in the graph; they are not input ports and cannot be connected.
+    /// Cozy Nodes supports string, int, float, bool and enum option fields.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field, Inherited = true)]
+    public sealed class OptionAttribute : Attribute
+    {
+        public string DisplayName { get; }
+        public string Tooltip { get; set; }
+
+        public OptionAttribute(string displayName = null)
+        {
+            DisplayName = displayName;
+        }
+    }
+
+    /// <summary>
+    /// Makes an array field into a variable number of value inputs. The number
+    /// of inputs comes from an int field marked with <see cref="OptionAttribute"/>.
+    /// Each generated input has a stable internal name, so existing values and
+    /// connections remain attached when the count grows.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field, Inherited = true)]
+    public sealed class InputListAttribute : Attribute
+    {
+        public string CountOptionName { get; }
+        public string DisplayName { get; }
+        public string Tooltip { get; set; }
+        public int MinimumCount { get; set; }
+        public int MaximumCount { get; set; } = 16;
+
+        public InputListAttribute(string countOptionName, string displayName = null)
+        {
+            CountOptionName = countOptionName;
+            DisplayName = displayName;
+        }
+    }
+
+    /// <summary>
+    /// Sets the minimum editor width, in pixels, for the input section of a
+    /// public CozyNode. This is presentation metadata only; it does not change
+    /// graph serialization or runtime behavior.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, Inherited = true)]
+    public sealed class CozyNodeWidthAttribute : Attribute
+    {
+        public int MinimumWidth { get; }
+
+        public CozyNodeWidthAttribute(int minimumWidth)
+        {
+            MinimumWidth = minimumWidth;
+        }
+    }
+
+    /// <summary>
+    /// Sets a node's default editor accent color. Color components normally use
+    /// the 0-to-1 range. This affects presentation only and does not change a
+    /// graph's runtime behavior.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, Inherited = true)]
+    public sealed class CozyNodeColorAttribute : Attribute
+    {
+        public float Red { get; }
+        public float Green { get; }
+        public float Blue { get; }
+        public float Alpha { get; set; } = 1f;
+
+        public CozyNodeColorAttribute(float red, float green, float blue)
+        {
+            Red = red;
+            Green = green;
+            Blue = blue;
+        }
+    }
+
+    /// <summary>
+    /// Sets a public CozyNode's Graph Toolkit accent color independently from
+    /// its header color. The accent is used for the node's border and other
+    /// native Graph Toolkit visual cues; it does not recolor the node body.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, Inherited = true)]
+    public sealed class CozyNodeAccentColorAttribute : Attribute
+    {
+        public float Red { get; }
+        public float Green { get; }
+        public float Blue { get; }
+        public float Alpha { get; set; } = 1f;
+
+        public CozyNodeAccentColorAttribute(float red, float green, float blue)
+        {
+            Red = red;
+            Green = green;
+            Blue = blue;
+        }
+    }
+
+    /// <summary>
+    /// Assigns an image asset to a public CozyNode's Graph Toolkit header.
+    /// The path is Unity project-relative, for example
+    /// "Assets/MyGame/GraphIcons/OpenDoor.png", or package-relative, for
+    /// example "Packages/com.example.package/Editor/Icons/OpenDoor.png".
+    /// Use a transparent, monochrome image so it remains readable at the
+    /// small size used by a node header.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, Inherited = true)]
+    public sealed class CozyNodeIconAttribute : Attribute
+    {
+        public string AssetPath { get; }
+
+        public CozyNodeIconAttribute(string assetPath)
+        {
+            AssetPath = assetPath;
+        }
+    }
+
+    /// <summary>
+    /// Sets the text color used in a public CozyNode's header. Use this with a
+    /// light CozyNodeColor so the node title remains readable without changing
+    /// the darker input and output sections.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, Inherited = true)]
+    public sealed class CozyNodeHeaderTextColorAttribute : Attribute
+    {
+        public float Red { get; }
+        public float Green { get; }
+        public float Blue { get; }
+        public float Alpha { get; set; } = 1f;
+
+        public CozyNodeHeaderTextColorAttribute(float red, float green, float blue)
+        {
+            Red = red;
+            Green = green;
+            Blue = blue;
+        }
+    }
+
+    /// <summary>
     /// Draws a string Input as a multi-line text area. It changes only the
     /// editor presentation; the field remains a normal string at runtime.
     /// </summary>
@@ -62,6 +209,12 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
     {
         public int MinLines { get; }
         public int MaxLines { get; }
+
+        /// <summary>
+        /// Minimum editor width, in pixels, for text fields on this node. Leave
+        /// this at zero to keep Graph Toolkit's normal width.
+        /// </summary>
+        public int MinimumWidth { get; set; }
 
         public CozyTextAreaAttribute(int minLines = 3, int maxLines = 8)
         {
@@ -98,6 +251,47 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
         public FlowOutputAttribute(string portName = "out")
         {
             PortName = portName;
+        }
+    }
+
+    /// <summary>
+    /// Marks a CozyNode as an entry point for a graph. Entry nodes only expose
+    /// flow outputs; the importer records their connected targets as runtime
+    /// entries instead of creating a runtime node for them.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, Inherited = false)]
+    public sealed class CozyGraphEntryAttribute : Attribute
+    {
+        public CozyGraphEntryKind Kind { get; }
+        public string Name { get; set; }
+        public string NameOptionName { get; set; }
+        public string FlowOutputName { get; set; } = "Execute";
+
+        public CozyGraphEntryAttribute(CozyGraphEntryKind kind)
+        {
+            Kind = kind;
+        }
+    }
+
+    /// <summary>
+    /// Lets a generated editor adapter replace one pre-release editor node type
+    /// without retaining that old implementation in the package.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+    public sealed class CozyNodeMovedFromAttribute : Attribute
+    {
+        public string SourceNamespace { get; }
+        public string SourceAssembly { get; }
+        public string SourceClassName { get; }
+
+        public CozyNodeMovedFromAttribute(
+            string sourceNamespace,
+            string sourceAssembly,
+            string sourceClassName)
+        {
+            SourceNamespace = sourceNamespace;
+            SourceAssembly = sourceAssembly;
+            SourceClassName = sourceClassName;
         }
     }
 }

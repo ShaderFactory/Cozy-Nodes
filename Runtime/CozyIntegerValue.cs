@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace ShaderFactory.CozyGraphToolkit.Runtime
+namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Shared integer-input reader for core numeric nodes. It keeps integer nodes

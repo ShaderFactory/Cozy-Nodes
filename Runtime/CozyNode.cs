@@ -1,4 +1,4 @@
-namespace ShaderFactory.CozyGraphToolkit.Runtime
+namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Base class for a game-specific Cozy node.
@@ -26,6 +26,14 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
         public virtual CozyNodeExecutionResult Execute(CozyNodeContext context)
         {
             return CozyNodeExecutionResult.Finish();
+        }
+
+        /// <summary>
+        /// Resets temporary state when the runner exits a scoped flow path, such
+        /// as breaking out of a loop. Most nodes do not need to override this.
+        /// </summary>
+        public virtual void CancelFlowScope()
+        {
         }
     }
 }

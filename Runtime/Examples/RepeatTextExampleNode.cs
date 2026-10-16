@@ -1,7 +1,7 @@
 using System.Text;
-using ShaderFactory.CozyGraphToolkit.Runtime;
+using ShaderFactory.CozyNodes.Runtime;
 
-namespace ShaderFactory.CozyGraphToolkit.Samples
+namespace ShaderFactory.CozyNodes.Samples
 {
     /// <summary>
     /// Your first custom Cozy value node.
@@ -11,12 +11,13 @@ namespace ShaderFactory.CozyGraphToolkit.Samples
     /// below to create the menu entry and ports automatically.
     /// </summary>
     [CozyNodeMenu("Examples/Text", "Repeat Text", Tooltip = "Repeats a text value a chosen number of times.")]
+    [CozyNodeWidth(270)]
     public class RepeatTextExampleNode : CozyNode
     {
         // [Input] creates an input port. A value typed into the node is used
         // unless another node is connected to this port.
         [Input("Text")]
-        [CozyTextArea(3, 5)]
+        [CozyTextArea(3, 5, MinimumWidth = 220)]
         public string Text = "Cozy! ";
 
         // Inputs can use the normal C# types supported by Cozy Nodes.

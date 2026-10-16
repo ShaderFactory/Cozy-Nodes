@@ -3,18 +3,17 @@ using Unity.GraphToolkit.Editor;
 using UnityEditor.AssetImporters;
 using System.Linq;
 using System.Collections.Generic;
-using ShaderFactory.CozyGraphToolkit.Runtime;
+using ShaderFactory.CozyNodes.Runtime;
 
-namespace ShaderFactory.CozyGraphToolkit.Editor
+namespace ShaderFactory.CozyNodes.Editor
 {
     // Increment this version whenever imported runtime data changes. Unity will then
     // rebuild existing .cozygraph assets instead of running stale runtime data.
-    [ScriptedImporter(20, CozyGraph.AssetExtension)]
+    [ScriptedImporter(27, CozyGraph.AssetExtension)]
     public class CozyGraphImporter : ScriptedImporter
     {
         public override void OnImportAsset(AssetImportContext ctx)
         {
-            Debug.LogWarning("Started Import Proccess.");
 
             // Unity's Graph Toolkit way of starting the import proccess.
             RuntimeCozyGraph cozyGraphRuntime = ScriptableObject.CreateInstance<RuntimeCozyGraph>();
@@ -26,6 +25,11 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
                 ctx.SetMainObject(cozyGraphRuntime);
                 return;
             }
+
+            // Keep the authoring graph's stable identity alongside the imported
+            // runtime graph. This is the bridge used by the Editor-only execution
+            // visualizer to animate the node that is currently running.
+            cozyGraphRuntime.SourceGraphID = cozyGraphEditor.ID.ToString();
 
             // Preserve Graph Toolkit's stable node identifiers. The runtime uses the
             // same identities after every import, which is important for debugging,
@@ -56,17 +60,14 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
 
             foreach (var editorNode in cozyGraphEditor.GetNodes())
             {
-                // Start is only a graph entry point. It does not need a runtime node,
-                // because execution begins at the first node connected to it.
-                if (editorNode is StartNode)
+                // Entry nodes are authoring markers, not runtime nodes. Their
+                // connected flow target is saved separately in the runtime graph.
+                if (editorNode is CustomCozyNode customEntryNode &&
+                    TryImportEntry(
+                        customEntryNode,
+                        nodesIdDictionary,
+                        cozyGraphRuntime))
                 {
-                    IPort startPort = editorNode.GetOutputPorts().FirstOrDefault();
-                    IPort firstConnectedPort = startPort?.FirstConnectedPort;
-                    if (firstConnectedPort != null)
-                    {
-                        cozyGraphRuntime.EntryNodeID = nodesIdDictionary[firstConnectedPort.GetNode()];
-                    }
-
                     continue;
                 }
 
@@ -124,7 +125,8 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
                     {
                         runtimeNode.RegisterFlowOutput(
                             outputPort.Name,
-                            nodesIdDictionary[connectedPort.GetNode()]);
+                            nodesIdDictionary[connectedPort.GetNode()],
+                            connectedPort.Name);
                     }
                 }
 
@@ -137,10 +139,89 @@ namespace ShaderFactory.CozyGraphToolkit.Editor
             ctx.AddObjectToAsset("Runtime", cozyGraphRuntime);
             ctx.SetMainObject(cozyGraphRuntime);
 
-            Debug.LogWarning("Ended Import Proccess.");
 
             // Uncomment the following line to open the Json version of the runtimeGraph at the end of the import:
             // RuntimeGraphJsonDebug.DumpToJsonAndOpen(cozyGraphRuntime);
+        }
+
+        private static bool TryImportEntry(
+            CustomCozyNode editorNode,
+            Dictionary<INode, string> nodesIdDictionary,
+            RuntimeCozyGraph runtimeGraph)
+        {
+            CozyNodeDefinition definition = CozyNodeReflection.GetDefinition(
+                editorNode.ResolveCustomNodeType());
+            CozyGraphEntryDefinition entryDefinition = definition?.Entry;
+            if (entryDefinition == null)
+                return false;
+
+            string entryName = entryDefinition.Name;
+            if (!string.IsNullOrWhiteSpace(entryDefinition.NameOptionName))
+                entryName = editorNode.GetConfiguredOptionValue(
+                    entryDefinition.NameOptionName) as string;
+
+            if (entryDefinition.Kind == CozyGraphEntryKind.CustomEvent &&
+                string.IsNullOrWhiteSpace(entryName))
+            {
+                Debug.LogError(
+                    $"Custom Event on '{definition.Title}' needs an Event Name.");
+                return true;
+            }
+
+            IPort outputPort = editorNode.GetOutputPortByName(
+                entryDefinition.FlowOutputName);
+            IPort connectedPort = outputPort?.FirstConnectedPort;
+            if (connectedPort == null)
+            {
+                Debug.LogWarning(
+                    $"Entry '{GetEntryDisplayName(entryDefinition, entryName)}' has no connected flow output.");
+                return true;
+            }
+
+            if (HasDuplicateEntry(runtimeGraph, entryDefinition.Kind, entryName))
+            {
+                Debug.LogError(
+                    $"The graph already has an entry named " +
+                    $"'{GetEntryDisplayName(entryDefinition, entryName)}'.");
+                return true;
+            }
+
+            RuntimeCozyGraphEntry entry = new RuntimeCozyGraphEntry();
+            entry.Kind = entryDefinition.Kind;
+            entry.Name = entryName;
+            entry.TargetNodeID = nodesIdDictionary[connectedPort.GetNode()];
+            entry.TargetInputPortName = connectedPort.Name;
+            runtimeGraph.Entries.Add(entry);
+            return true;
+        }
+
+        private static bool HasDuplicateEntry(
+            RuntimeCozyGraph runtimeGraph,
+            CozyGraphEntryKind kind,
+            string entryName)
+        {
+            foreach (RuntimeCozyGraphEntry existingEntry in runtimeGraph.Entries)
+            {
+                if (existingEntry == null || existingEntry.Kind != kind)
+                    continue;
+
+                if (kind != CozyGraphEntryKind.CustomEvent ||
+                    string.Equals(existingEntry.Name, entryName, System.StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string GetEntryDisplayName(
+            CozyGraphEntryDefinition definition,
+            string entryName)
+        {
+            return definition.Kind == CozyGraphEntryKind.CustomEvent
+                ? entryName
+                : definition.Name;
         }
 
     }

@@ -4,9 +4,9 @@ using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using Unity.GraphToolkit.Editor;
-using ShaderFactory.CozyGraphToolkit.Runtime;
+using ShaderFactory.CozyNodes.Runtime;
 
-namespace ShaderFactory.CozyGraphToolkit.Editor
+namespace ShaderFactory.CozyNodes.Editor
 {
     /// <summary>
     /// Converts Graph Toolkit data ports into values that can be stored in a

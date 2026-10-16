@@ -1,6 +1,6 @@
 using System;
 
-namespace ShaderFactory.CozyGraphToolkit.Runtime
+namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Serializable description of one Blackboard variable. This belongs to the

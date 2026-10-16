@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 
-namespace ShaderFactory.CozyGraphToolkit.Runtime
+namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Represents a node after being converted to runtime form.
@@ -124,6 +124,46 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
             return GetValue(inputPort, cozyManager);
         }
 
+        /// <summary>
+        /// Gets every value in a named variable input list in its declared order.
+        /// Each element still uses the standard recursive input resolver, so it can
+        /// be a local value, Blackboard variable or another node's output.
+        /// </summary>
+        public List<object> GetInputValues(string inputListName, CozyManager cozyManager)
+        {
+            List<KeyValuePair<int, CozyRuntimePort>> indexedPorts =
+                new List<KeyValuePair<int, CozyRuntimePort>>();
+
+            foreach (CozyRuntimePort inputPort in InputPorts)
+            {
+                if (CozyNodeReflection.TryGetInputListPortIndex(
+                        inputListName,
+                        inputPort.Key,
+                        out int index))
+                {
+                    indexedPorts.Add(new KeyValuePair<int, CozyRuntimePort>(index, inputPort));
+                }
+            }
+
+            indexedPorts.Sort((first, second) => first.Key.CompareTo(second.Key));
+
+            List<object> values = new List<object>(indexedPorts.Count);
+            foreach (KeyValuePair<int, CozyRuntimePort> indexedPort in indexedPorts)
+                values.Add(GetValue(indexedPort.Value, cozyManager));
+
+            return values;
+        }
+
+        /// <summary>
+        /// Returns a node option imported from the editor graph. Only custom Cozy
+        /// nodes currently provide options; built-in runtime nodes return false.
+        /// </summary>
+        public virtual bool TryGetOptionValue(string optionName, out object value)
+        {
+            value = null;
+            return false;
+        }
+
         private RuntimeCozyNode GetNodeByID(string nodeID)
         {
             if (Graph == null)
@@ -160,16 +200,39 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
         }
 
         /// <summary>
+        /// Executes this node with the input port through which flow arrived.
+        /// Existing runtime nodes can keep overriding Run(CozyManager).
+        /// </summary>
+        public virtual CozyNodeExecutionResult Run(
+            CozyManager cozyManager,
+            string enteredFlowInputName)
+        {
+            return Run(cozyManager);
+        }
+
+        /// <summary>
+        /// Clears temporary state when the runner discards this node's scoped
+        /// continuation. Only scoped flow nodes need to override it.
+        /// </summary>
+        public virtual void CancelFlowScope(CozyManager cozyManager)
+        {
+        }
+
+        /// <summary>
         /// Adds or replaces the node reached from one named flow output.
         /// The importer calls this once for every connected execution output.
         /// </summary>
-        public void RegisterFlowOutput(string outputPortName, string nextNodeID)
+        public void RegisterFlowOutput(
+            string outputPortName,
+            string nextNodeID,
+            string nextInputPortName)
         {
             foreach (RuntimeFlowConnection connection in FlowOutputConnections)
             {
                 if (connection.OutputPortName == outputPortName)
                 {
                     connection.NextNodeID = nextNodeID;
+                    connection.NextInputPortName = nextInputPortName;
                     return;
                 }
             }
@@ -177,24 +240,27 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
             RuntimeFlowConnection newConnection = new RuntimeFlowConnection();
             newConnection.OutputPortName = outputPortName;
             newConnection.NextNodeID = nextNodeID;
+            newConnection.NextInputPortName = nextInputPortName;
             FlowOutputConnections.Add(newConnection);
         }
 
         /// <summary>
         /// Finds the next node for a named flow output chosen by Run.
         /// </summary>
-        public bool TryGetFlowOutput(string outputPortName, out string nextNodeID)
+        public bool TryGetFlowOutput(
+            string outputPortName,
+            out RuntimeFlowConnection flowConnection)
         {
             foreach (RuntimeFlowConnection connection in FlowOutputConnections)
             {
                 if (connection.OutputPortName == outputPortName)
                 {
-                    nextNodeID = connection.NextNodeID;
+                    flowConnection = connection;
                     return true;
                 }
             }
 
-            nextNodeID = null;
+            flowConnection = null;
             return false;
         }
 

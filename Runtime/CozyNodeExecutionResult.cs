@@ -1,6 +1,6 @@
 using System;
 
-namespace ShaderFactory.CozyGraphToolkit.Runtime
+namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Describes what the graph runner should do after a flow node has run.
@@ -11,6 +11,8 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
         public enum State
         {
             Continue,
+            Call,
+            ExitScope,
             Waiting,
             Finished,
             Failed
@@ -25,6 +27,32 @@ namespace ShaderFactory.CozyGraphToolkit.Runtime
             return new CozyNodeExecutionResult
             {
                 ExecutionState = State.Continue,
+                OutputPortName = outputPortName
+            };
+        }
+
+        /// <summary>
+        /// Runs a child flow path and resumes this node when that path reaches an
+        /// unconnected output. Loop nodes use this to execute one body iteration.
+        /// </summary>
+        public static CozyNodeExecutionResult Call(string outputPortName)
+        {
+            return new CozyNodeExecutionResult
+            {
+                ExecutionState = State.Call,
+                OutputPortName = outputPortName
+            };
+        }
+
+        /// <summary>
+        /// Leaves the active scoped flow and follows the named output. For uses
+        /// this when it receives a Break input.
+        /// </summary>
+        public static CozyNodeExecutionResult ExitScope(string outputPortName)
+        {
+            return new CozyNodeExecutionResult
+            {
+                ExecutionState = State.ExitScope,
                 OutputPortName = outputPortName
             };
         }

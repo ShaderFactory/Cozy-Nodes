@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace ShaderFactory.CozyGraphToolkit.Editor
+namespace ShaderFactory.CozyNodes.Editor
 {
     public static class StringHelper
     {

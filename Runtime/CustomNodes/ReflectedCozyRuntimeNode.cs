@@ -148,7 +148,10 @@ namespace ShaderFactory.CozyNodes.Runtime
                 return null;
             }
 
-            return cozyManager.GetOrCreateCustomNode(NodeID, nodeType);
+            // Imported node instances, rather than their editor-local IDs, own
+            // custom-node state. That keeps identical node IDs in future child
+            // graphs from sharing one mutable custom node instance.
+            return cozyManager.GetOrCreateCustomNode(this, nodeType);
         }
     }
 }

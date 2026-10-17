@@ -13,6 +13,8 @@ namespace ShaderFactory.CozyNodes.Runtime
             Continue,
             Call,
             ExitScope,
+            EnterSubgraph,
+            ReturnFromSubgraph,
             Waiting,
             Finished,
             Failed
@@ -21,6 +23,12 @@ namespace ShaderFactory.CozyNodes.Runtime
         public State ExecutionState;
         public string OutputPortName;
         public string ErrorMessage;
+
+        // EnterSubgraph uses these values to select the child frame's first node.
+        // They are runtime instructions only and are never stored in a graph asset.
+        public RuntimeCozyGraph Subgraph;
+        public string TargetNodeID;
+        public string TargetInputPortName;
 
         /// <summary>
         /// A non-negative value makes a Waiting result a timed pause. The runner
@@ -64,6 +72,29 @@ namespace ShaderFactory.CozyNodes.Runtime
             return new CozyNodeExecutionResult
             {
                 ExecutionState = State.ExitScope,
+                OutputPortName = outputPortName
+            };
+        }
+
+        public static CozyNodeExecutionResult EnterSubgraph(
+            RuntimeCozyGraph subgraph,
+            string targetNodeID,
+            string targetInputPortName)
+        {
+            return new CozyNodeExecutionResult
+            {
+                ExecutionState = State.EnterSubgraph,
+                Subgraph = subgraph,
+                TargetNodeID = targetNodeID,
+                TargetInputPortName = targetInputPortName
+            };
+        }
+
+        public static CozyNodeExecutionResult ReturnFromSubgraph(string outputPortName)
+        {
+            return new CozyNodeExecutionResult
+            {
+                ExecutionState = State.ReturnFromSubgraph,
                 OutputPortName = outputPortName
             };
         }

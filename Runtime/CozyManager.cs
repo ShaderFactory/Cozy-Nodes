@@ -44,8 +44,8 @@ namespace ShaderFactory.CozyNodes.Runtime
         // Custom nodes may hold temporary state while one graph execution is
         // running. Keep those instances on the Manager, never on the imported
         // asset, so two Managers running the same graph stay independent.
-        private readonly Dictionary<string, CozyNode> customNodeInstances =
-            new Dictionary<string, CozyNode>();
+        private readonly Dictionary<RuntimeCozyNode, CozyNode> customNodeInstances =
+            new Dictionary<RuntimeCozyNode, CozyNode>();
 
         // Fast Enter Play Mode can preserve static event subscribers. Each Play
         // session starts with a clean observer list; Editor tooling subscribes
@@ -86,19 +86,29 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// This is internal package plumbing; custom nodes receive their behavior
         /// through CozyNodeContext rather than accessing this method directly.
         /// </summary>
-        internal CozyNode GetOrCreateCustomNode(string nodeID, Type nodeType)
+        internal CozyNode GetOrCreateCustomNode(RuntimeCozyNode runtimeNode, Type nodeType)
         {
-            if (string.IsNullOrWhiteSpace(nodeID) || nodeType == null)
+            if (runtimeNode == null || nodeType == null)
                 return null;
 
-            if (customNodeInstances.TryGetValue(nodeID, out CozyNode existingNode))
+            if (customNodeInstances.TryGetValue(runtimeNode, out CozyNode existingNode))
                 return existingNode;
 
             CozyNode newNode = CozyNodeReflection.CreateNodeInstance(nodeType);
             if (newNode != null)
-                customNodeInstances.Add(nodeID, newNode);
+                customNodeInstances.Add(runtimeNode, newNode);
 
             return newNode;
+        }
+
+        /// <summary>
+        /// Switches the variable table exposed to nodes while the runner enters
+        /// or returns from an imported child graph. It remains internal so game
+        /// code can observe values but cannot replace a running frame's scope.
+        /// </summary>
+        internal void SetRuntimeVariables(CozyRuntimeVariables runtimeVariables)
+        {
+            RuntimeVariables = runtimeVariables;
         }
 
         /// <summary>
@@ -127,11 +137,15 @@ namespace ShaderFactory.CozyNodes.Runtime
 
         private void HandleFlowNodeExecuting(RuntimeCozyNode node)
         {
-            if (RuntimeGraph == null || node == null || string.IsNullOrEmpty(node.NodeID))
+            if (node == null || string.IsNullOrEmpty(node.NodeID))
                 return;
 
-            FlowNodeExecuting?.Invoke(RuntimeGraph, node.NodeID);
-            AnyFlowNodeExecuting?.Invoke(this, RuntimeGraph, node.NodeID);
+            RuntimeCozyGraph nodeGraph = node.Graph ?? RuntimeGraph;
+            if (nodeGraph == null)
+                return;
+
+            FlowNodeExecuting?.Invoke(nodeGraph, node.NodeID);
+            AnyFlowNodeExecuting?.Invoke(this, nodeGraph, node.NodeID);
         }
 
         /// <summary>

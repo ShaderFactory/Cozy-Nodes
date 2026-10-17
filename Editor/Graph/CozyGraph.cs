@@ -11,7 +11,10 @@ namespace ShaderFactory.CozyNodes.Editor
     // Do not automatically add every Node class from this assembly to the
     // creation menu. A Cozy node must explicitly opt in with UseWithGraph,
     // which keeps editor infrastructure out of the user's node library.
-    [Graph(AssetExtension, GraphOptions.DisableAutoInclusionOfNodesFromGraphAssembly)]
+    [Graph(
+        AssetExtension,
+        GraphOptions.DisableAutoInclusionOfNodesFromGraphAssembly |
+        GraphOptions.SupportsSubgraphs)]
     public class CozyGraph : Graph
     {
         public const string AssetExtension = "cozygraph";

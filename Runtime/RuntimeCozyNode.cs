@@ -34,7 +34,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         [SerializeReference] public List<CozyRuntimePort> OutputPorts = new ();
 
         /// <summary> Reference to what runtime graph this node is a part of. </summary>
-        [SerializeReference] public RuntimeCozyGraph Graph;
+        public RuntimeCozyGraph Graph;
 
         #region Constructors
         public RuntimeCozyNode() {}

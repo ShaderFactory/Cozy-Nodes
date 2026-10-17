@@ -18,28 +18,11 @@ namespace ShaderFactory.CozyNodes.Runtime
         public event Action<RuntimeCozyNode> FlowNodeExecuting;
 
         private readonly CozyManager cozyManager;
-        private readonly Dictionary<string, RuntimeCozyNode> nodeLookup =
-            new Dictionary<string, RuntimeCozyNode>();
-        private readonly Stack<FlowContinuation> continuationNodes =
-            new Stack<FlowContinuation>();
-
-        private RuntimeCozyGraph runtimeGraph;
-        private RuntimeCozyNode currentNode;
-        private string enteredFlowInputName;
+        private CozyExecutionFrame rootFrame;
+        private CozyExecutionFrame activeFrame;
+        private readonly Stack<CozyExecutionFrame> suspendedFrames =
+            new Stack<CozyExecutionFrame>();
         private bool isRunning;
-        private bool isWaiting;
-        private float remainingWaitSeconds = -1f;
-        private string timedWaitOutputPortName;
-
-        private readonly struct FlowContinuation
-        {
-            public RuntimeCozyNode Node { get; }
-
-            public FlowContinuation(RuntimeCozyNode node)
-            {
-                Node = node;
-            }
-        }
 
         public CozyGraphRunner(CozyManager manager)
         {
@@ -54,15 +37,15 @@ namespace ShaderFactory.CozyNodes.Runtime
         public bool Initialize(RuntimeCozyGraph graph)
         {
             StopGraph();
-            runtimeGraph = graph;
 
-            if (runtimeGraph == null)
+            if (graph == null)
             {
                 Debug.LogWarning("Please assign a Graph to the Cozy Manager.");
                 return false;
             }
 
-            BuildNodeLookup(runtimeGraph);
+            rootFrame = new CozyExecutionFrame(graph, cozyManager.RuntimeVariables);
+            ActivateFrame(rootFrame);
             return true;
         }
 
@@ -95,7 +78,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             string entryName,
             bool reportMissingEntry)
         {
-            if (runtimeGraph == null)
+            if (rootFrame?.Graph == null)
             {
                 Debug.LogWarning("Cozy Graph has not been initialized.");
                 return false;
@@ -109,7 +92,7 @@ namespace ShaderFactory.CozyNodes.Runtime
                 return false;
             }
 
-            if (!runtimeGraph.TryGetEntry(kind, entryName, out RuntimeCozyGraphEntry entry))
+            if (!rootFrame.Graph.TryGetEntry(kind, entryName, out RuntimeCozyGraphEntry entry))
             {
                 if (reportMissingEntry)
                     Debug.LogWarning($"Custom Event '{entryName}' was not found in this graph.");
@@ -126,18 +109,19 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// </summary>
         private bool StartGraph(string entryNodeID, string entryInputPortName)
         {
-            if (!nodeLookup.TryGetValue(entryNodeID, out currentNode))
+            if (rootFrame == null ||
+                !rootFrame.NodeLookup.TryGetValue(entryNodeID, out RuntimeCozyNode entryNode))
             {
                 Debug.LogWarning("Entry node was not found: " + entryNodeID);
                 return false;
             }
 
             isRunning = true;
-            isWaiting = false;
-            remainingWaitSeconds = -1f;
-            timedWaitOutputPortName = null;
-            continuationNodes.Clear();
-            enteredFlowInputName = string.IsNullOrWhiteSpace(entryInputPortName)
+            suspendedFrames.Clear();
+            ActivateFrame(rootFrame);
+            rootFrame.ResetFlowState();
+            rootFrame.CurrentNode = entryNode;
+            rootFrame.EnteredFlowInputName = string.IsNullOrWhiteSpace(entryInputPortName)
                 ? "in"
                 : entryInputPortName;
             RunUntilPauseOrEnd();
@@ -150,16 +134,17 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// </summary>
         public void Trigger(string triggerName)
         {
-            if (!isRunning || !isWaiting || currentNode == null)
+            if (!isRunning || activeFrame == null ||
+                !activeFrame.IsWaiting || activeFrame.CurrentNode == null)
                 return;
 
-            if (currentNode is not ICozyTriggerListener triggerListener)
+            if (activeFrame.CurrentNode is not ICozyTriggerListener triggerListener)
                 return;
 
             if (!triggerListener.TryReceiveTrigger(triggerName, cozyManager))
                 return;
 
-            isWaiting = false;
+            activeFrame.IsWaiting = false;
             RunUntilPauseOrEnd();
         }
 
@@ -169,17 +154,18 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// </summary>
         public void Update(float deltaTime)
         {
-            if (!isRunning || !isWaiting || remainingWaitSeconds < 0f)
+            if (!isRunning || activeFrame == null ||
+                !activeFrame.IsWaiting || activeFrame.RemainingWaitSeconds < 0f)
                 return;
 
-            remainingWaitSeconds -= Math.Max(0f, deltaTime);
-            if (remainingWaitSeconds > 0f)
+            activeFrame.RemainingWaitSeconds -= Math.Max(0f, deltaTime);
+            if (activeFrame.RemainingWaitSeconds > 0f)
                 return;
 
-            string outputPortName = timedWaitOutputPortName;
-            remainingWaitSeconds = -1f;
-            timedWaitOutputPortName = null;
-            isWaiting = false;
+            string outputPortName = activeFrame.TimedWaitOutputPortName;
+            activeFrame.RemainingWaitSeconds = -1f;
+            activeFrame.TimedWaitOutputPortName = null;
+            activeFrame.IsWaiting = false;
 
             if (string.IsNullOrEmpty(outputPortName))
             {
@@ -192,27 +178,35 @@ namespace ShaderFactory.CozyNodes.Runtime
                 RunUntilPauseOrEnd();
         }
 
-        private void BuildNodeLookup(RuntimeCozyGraph runtimeGraph)
-        {
-            nodeLookup.Clear();
-
-            foreach (RuntimeCozyNode node in runtimeGraph.AllNodes)
-                nodeLookup[node.NodeID] = node;
-        }
-
         private void RunUntilPauseOrEnd()
         {
-            while (isRunning && currentNode != null)
+            while (isRunning && activeFrame?.CurrentNode != null)
             {
-                FlowNodeExecuting?.Invoke(currentNode);
-                CozyNodeExecutionResult result = currentNode.Run(
+                FlowNodeExecuting?.Invoke(activeFrame.CurrentNode);
+                CozyNodeExecutionResult result = activeFrame.CurrentNode.Run(
                     cozyManager,
-                    enteredFlowInputName);
+                    activeFrame.EnteredFlowInputName);
                 if (result == null)
                 {
-                    Debug.LogError($"Node '{currentNode.NodeType}' returned no execution result.");
+                    Debug.LogError($"Node '{activeFrame.CurrentNode.NodeType}' returned no execution result.");
                     StopGraph();
                     return;
+                }
+
+                if (result.ExecutionState == CozyNodeExecutionResult.State.EnterSubgraph)
+                {
+                    if (!TryEnterSubgraph(result))
+                        return;
+
+                    continue;
+                }
+
+                if (result.ExecutionState == CozyNodeExecutionResult.State.ReturnFromSubgraph)
+                {
+                    if (!TryReturnFromSubgraph(result))
+                        return;
+
+                    continue;
                 }
 
                 if (result.ExecutionState == CozyNodeExecutionResult.State.Waiting)
@@ -222,16 +216,16 @@ namespace ShaderFactory.CozyNodes.Runtime
                         if (string.IsNullOrEmpty(result.OutputPortName))
                         {
                             Debug.LogError(
-                                $"Node '{currentNode.NodeType}' started a timed wait without choosing a flow output.");
+                                $"Node '{activeFrame.CurrentNode.NodeType}' started a timed wait without choosing a flow output.");
                             StopGraph();
                             return;
                         }
 
-                        remainingWaitSeconds = result.WaitDurationSeconds;
-                        timedWaitOutputPortName = result.OutputPortName;
+                        activeFrame.RemainingWaitSeconds = result.WaitDurationSeconds;
+                        activeFrame.TimedWaitOutputPortName = result.OutputPortName;
                     }
 
-                    isWaiting = true;
+                    activeFrame.IsWaiting = true;
                     return;
                 }
 
@@ -263,22 +257,22 @@ namespace ShaderFactory.CozyNodes.Runtime
             bool isCall = result.ExecutionState == CozyNodeExecutionResult.State.Call;
             bool exitsScope = result.ExecutionState == CozyNodeExecutionResult.State.ExitScope;
 
-            if (exitsScope && !TryExitScope(currentNode))
+            if (exitsScope && !TryExitScope(activeFrame.CurrentNode))
             {
                 Debug.LogError(
-                    $"Node '{currentNode.NodeType}' tried to exit a flow scope that is not active.");
+                    $"Node '{activeFrame.CurrentNode.NodeType}' tried to exit a flow scope that is not active.");
                 StopGraph();
                 return false;
             }
 
             if (string.IsNullOrEmpty(result.OutputPortName))
             {
-                Debug.LogError($"Node '{currentNode.NodeType}' continued without choosing a flow output.");
+                Debug.LogError($"Node '{activeFrame.CurrentNode.NodeType}' continued without choosing a flow output.");
                 StopGraph();
                 return false;
             }
 
-            if (!currentNode.TryGetFlowOutput(
+            if (!activeFrame.CurrentNode.TryGetFlowOutput(
                     result.OutputPortName,
                     out RuntimeFlowConnection flowConnection))
             {
@@ -286,20 +280,28 @@ namespace ShaderFactory.CozyNodes.Runtime
                 {
                     // Calling an unconnected body is an immediate return to
                     // the caller, which can advance to its next iteration.
-                    enteredFlowInputName = null;
+                    activeFrame.EnteredFlowInputName = null;
                     return true;
                 }
 
                 if (TryResumeContinuation())
                     return true;
 
-                // An unconnected flow output is a valid end to a graph.
+                if (suspendedFrames.Count > 0)
+                {
+                    Debug.LogError(
+                        $"Child graph '{activeFrame.Graph.name}' ended without reaching a flow output gateway.");
+                    StopGraph();
+                    return false;
+                }
+
+                // An unconnected flow output is a valid end to the root graph.
                 StopGraph();
                 return false;
             }
 
-            RuntimeCozyNode callingNode = currentNode;
-            if (!nodeLookup.TryGetValue(flowConnection.NextNodeID, out RuntimeCozyNode nextNode))
+            RuntimeCozyNode callingNode = activeFrame.CurrentNode;
+            if (!activeFrame.NodeLookup.TryGetValue(flowConnection.NextNodeID, out RuntimeCozyNode nextNode))
             {
                 Debug.LogError($"Flow output '{result.OutputPortName}' points to a missing node.");
                 StopGraph();
@@ -307,10 +309,10 @@ namespace ShaderFactory.CozyNodes.Runtime
             }
 
             if (isCall)
-                continuationNodes.Push(new FlowContinuation(callingNode));
+                activeFrame.ContinuationNodes.Push(callingNode);
 
-            currentNode = nextNode;
-            enteredFlowInputName = string.IsNullOrWhiteSpace(flowConnection.NextInputPortName)
+            activeFrame.CurrentNode = nextNode;
+            activeFrame.EnteredFlowInputName = string.IsNullOrWhiteSpace(flowConnection.NextInputPortName)
                 ? "in"
                 : flowConnection.NextInputPortName;
             return true;
@@ -318,20 +320,106 @@ namespace ShaderFactory.CozyNodes.Runtime
 
         private bool TryResumeContinuation()
         {
-            if (continuationNodes.Count == 0)
+            if (activeFrame.ContinuationNodes.Count == 0)
                 return false;
 
-            currentNode = continuationNodes.Pop().Node;
-            enteredFlowInputName = null;
+            activeFrame.CurrentNode = activeFrame.ContinuationNodes.Pop();
+            activeFrame.EnteredFlowInputName = null;
             return true;
+        }
+
+        /// <summary>
+        /// Suspends the caller at its subgraph node, then gives the child its own
+        /// node lookup, continuation stack and Blackboard value scope. The caller
+        /// remains untouched until a child exit gateway chooses its return path.
+        /// </summary>
+        private bool TryEnterSubgraph(CozyNodeExecutionResult result)
+        {
+            if (result.Subgraph == null)
+            {
+                Debug.LogError("A subgraph call did not provide an imported child graph.");
+                StopGraph();
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(result.TargetNodeID))
+            {
+                Debug.LogError(
+                    $"Subgraph '{result.Subgraph.name}' has a flow input without a target node.");
+                StopGraph();
+                return false;
+            }
+
+            CozyExecutionFrame childFrame = new CozyExecutionFrame(
+                result.Subgraph,
+                new CozyRuntimeVariables(result.Subgraph.VariableDefinitions));
+
+            string dataInputError = null;
+            if (activeFrame.CurrentNode is not RuntimeCozySubgraphNode subgraphNode ||
+                !subgraphNode.TryPopulateChildVariables(
+                    cozyManager,
+                    childFrame.Variables,
+                    out dataInputError))
+            {
+                Debug.LogError(
+                    dataInputError ??
+                    "A subgraph call did not originate from a RuntimeCozySubgraphNode.");
+                StopGraph();
+                return false;
+            }
+
+            if (!childFrame.NodeLookup.TryGetValue(
+                    result.TargetNodeID,
+                    out RuntimeCozyNode entryNode))
+            {
+                Debug.LogError(
+                    $"Subgraph '{result.Subgraph.name}' points to a missing entry node.");
+                StopGraph();
+                return false;
+            }
+
+            suspendedFrames.Push(activeFrame);
+            ActivateFrame(childFrame);
+            activeFrame.CurrentNode = entryNode;
+            activeFrame.EnteredFlowInputName = string.IsNullOrWhiteSpace(
+                result.TargetInputPortName)
+                ? "in"
+                : result.TargetInputPortName;
+            return true;
+        }
+
+        /// <summary>
+        /// Restores the suspended caller and follows the flow output named by the
+        /// child gateway. This uses the same flow-resolution path as ordinary
+        /// nodes, so loops and unconnected outputs keep their normal behavior.
+        /// </summary>
+        private bool TryReturnFromSubgraph(CozyNodeExecutionResult result)
+        {
+            if (suspendedFrames.Count == 0)
+            {
+                Debug.LogError("A subgraph flow output was reached without a calling graph.");
+                StopGraph();
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(result.OutputPortName))
+            {
+                Debug.LogError("A subgraph flow output has no name.");
+                StopGraph();
+                return false;
+            }
+
+            CancelFrame(activeFrame);
+            ActivateFrame(suspendedFrames.Pop());
+            return TryAdvanceFlow(CozyNodeExecutionResult.ContinueWith(result.OutputPortName));
         }
 
         private bool TryExitScope(RuntimeCozyNode scopeNode)
         {
             bool isActiveScope = false;
-            foreach (FlowContinuation continuation in continuationNodes)
+            foreach (RuntimeCozyNode continuationNode in activeFrame.ContinuationNodes)
             {
-                if (continuation.Node == scopeNode)
+                if (continuationNode == scopeNode)
                 {
                     isActiveScope = true;
                     break;
@@ -341,9 +429,9 @@ namespace ShaderFactory.CozyNodes.Runtime
             if (!isActiveScope)
                 return false;
 
-            while (continuationNodes.Count > 0)
+            while (activeFrame.ContinuationNodes.Count > 0)
             {
-                RuntimeCozyNode cancelledNode = continuationNodes.Pop().Node;
+                RuntimeCozyNode cancelledNode = activeFrame.ContinuationNodes.Pop();
                 cancelledNode?.CancelFlowScope(cozyManager);
 
                 if (cancelledNode == scopeNode)
@@ -356,15 +444,35 @@ namespace ShaderFactory.CozyNodes.Runtime
         private void StopGraph()
         {
             isRunning = false;
-            isWaiting = false;
-            remainingWaitSeconds = -1f;
-            timedWaitOutputPortName = null;
-            currentNode?.CancelFlowScope(cozyManager);
-            currentNode = null;
-            enteredFlowInputName = null;
+            if (activeFrame == null)
+                return;
 
-            while (continuationNodes.Count > 0)
-                continuationNodes.Pop().Node?.CancelFlowScope(cozyManager);
+            CancelFrame(activeFrame);
+
+            while (suspendedFrames.Count > 0)
+                CancelFrame(suspendedFrames.Pop());
+
+            if (rootFrame != null)
+                ActivateFrame(rootFrame);
+        }
+
+        private void ActivateFrame(CozyExecutionFrame frame)
+        {
+            activeFrame = frame;
+            cozyManager.SetRuntimeVariables(frame?.Variables);
+        }
+
+        private void CancelFrame(CozyExecutionFrame frame)
+        {
+            if (frame == null)
+                return;
+
+            frame.CurrentNode?.CancelFlowScope(cozyManager);
+
+            while (frame.ContinuationNodes.Count > 0)
+                frame.ContinuationNodes.Pop()?.CancelFlowScope(cozyManager);
+
+            frame.ResetFlowState();
         }
     }
 }

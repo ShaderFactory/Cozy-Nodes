@@ -144,6 +144,34 @@ namespace ShaderFactory.CozyNodes.Runtime
                 definition.Entry.FlowOutputName = entryAttribute.FlowOutputName;
             }
 
+            foreach (CozyTypeParameterAttribute typeParameterAttribute in
+                     nodeType.GetCustomAttributes<CozyTypeParameterAttribute>(true))
+            {
+                if (string.IsNullOrWhiteSpace(typeParameterAttribute.Name))
+                {
+                    UnityEngine.Debug.LogError(
+                        $"Custom Cozy node '{definition.Title}' declares a type parameter with no name.");
+                    continue;
+                }
+
+                if (definition.FindTypeParameter(typeParameterAttribute.Name) != null)
+                {
+                    UnityEngine.Debug.LogError(
+                        $"Custom Cozy node '{definition.Title}' declares type parameter " +
+                        $"'{typeParameterAttribute.Name}' more than once.");
+                    continue;
+                }
+
+                definition.TypeParameters.Add(new CozyTypeParameterDefinition
+                {
+                    Name = typeParameterAttribute.Name,
+                    DisplayName = string.IsNullOrWhiteSpace(typeParameterAttribute.DisplayName)
+                        ? typeParameterAttribute.Name
+                        : typeParameterAttribute.DisplayName,
+                    AllowArrayTypes = typeParameterAttribute.AllowArrayTypes
+                });
+            }
+
             FieldInfo[] fields = nodeType.GetFields(
                 BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             CozyNode defaultInstance = CreateNodeInstance(nodeType);
@@ -154,6 +182,10 @@ namespace ShaderFactory.CozyNodes.Runtime
                 OutputAttribute outputAttribute = field.GetCustomAttribute<OutputAttribute>(true);
                 OptionAttribute optionAttribute = field.GetCustomAttribute<OptionAttribute>(true);
                 InputListAttribute inputListAttribute = field.GetCustomAttribute<InputListAttribute>(true);
+                CozyTypeParameterPortAttribute typeParameterPortAttribute =
+                    field.GetCustomAttribute<CozyTypeParameterPortAttribute>(true);
+                CozyBlackboardVariableAttribute blackboardVariableAttribute =
+                    field.GetCustomAttribute<CozyBlackboardVariableAttribute>(true);
 
                 if (inputAttribute == null && outputAttribute == null &&
                     optionAttribute == null && inputListAttribute == null)
@@ -167,7 +199,12 @@ namespace ShaderFactory.CozyNodes.Runtime
 
                 if (inputListAttribute != null)
                 {
-                    AddInputListDefinition(definition, field, inputListAttribute, defaultInstance);
+                    AddInputListDefinition(
+                        definition,
+                        field,
+                        inputListAttribute,
+                        typeParameterPortAttribute,
+                        defaultInstance);
                     continue;
                 }
 
@@ -179,6 +216,27 @@ namespace ShaderFactory.CozyNodes.Runtime
 
                 port.Tooltip = inputAttribute?.Tooltip ?? outputAttribute?.Tooltip;
                 port.ValueType = field.FieldType;
+                port.RequiresBlackboardVariable = blackboardVariableAttribute != null;
+                if (typeParameterPortAttribute != null)
+                {
+                    if (field.FieldType != typeof(object))
+                    {
+                        UnityEngine.Debug.LogError(
+                            $"Type-parameter port '{field.Name}' on '{definition.Title}' " +
+                            "must use object as its backing field type.");
+                    }
+                    else if (definition.FindTypeParameter(typeParameterPortAttribute.TypeParameterName) == null)
+                    {
+                        UnityEngine.Debug.LogError(
+                            $"Type-parameter port '{field.Name}' on '{definition.Title}' " +
+                            $"references unknown type parameter '{typeParameterPortAttribute.TypeParameterName}'.");
+                    }
+                    else
+                    {
+                        port.TypeParameterName = typeParameterPortAttribute.TypeParameterName;
+                        port.TypeParameterIsArray = typeParameterPortAttribute.IsArray;
+                    }
+                }
                 port.IsInput = inputAttribute != null;
                 port.IsOutput = outputAttribute != null;
 
@@ -202,6 +260,7 @@ namespace ShaderFactory.CozyNodes.Runtime
                     definition.Outputs.Add(port);
             }
 
+            ValidateTypeParameterDefinitions(definition);
             ValidateInputListDefinitions(definition);
             AddFlowPorts(nodeType, definition);
             return definition;
@@ -239,6 +298,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             CozyNodeDefinition definition,
             FieldInfo field,
             InputListAttribute inputListAttribute,
+            CozyTypeParameterPortAttribute typeParameterPortAttribute,
             CozyNode defaultInstance)
         {
             if (!field.FieldType.IsArray)
@@ -250,7 +310,25 @@ namespace ShaderFactory.CozyNodes.Runtime
             }
 
             Type elementType = field.FieldType.GetElementType();
-            if (!IsSupportedPortValueType(elementType))
+            bool usesTypeParameter = typeParameterPortAttribute != null;
+            if (usesTypeParameter && field.FieldType != typeof(object[]))
+            {
+                UnityEngine.Debug.LogError(
+                    $"Type-parameter input list '{field.Name}' on '{definition.Title}' " +
+                    "must use object[] as its backing field type.");
+                return;
+            }
+
+            if (usesTypeParameter &&
+                definition.FindTypeParameter(typeParameterPortAttribute.TypeParameterName) == null)
+            {
+                UnityEngine.Debug.LogError(
+                    $"Type-parameter input list '{field.Name}' on '{definition.Title}' " +
+                    $"references unknown type parameter '{typeParameterPortAttribute.TypeParameterName}'.");
+                return;
+            }
+
+            if (!usesTypeParameter && !IsSupportedPortValueType(elementType))
             {
                 UnityEngine.Debug.LogError(
                     $"Custom Cozy node '{definition.Title}' has an unsupported input list " +
@@ -265,6 +343,11 @@ namespace ShaderFactory.CozyNodes.Runtime
                 : inputListAttribute.DisplayName;
             inputList.Tooltip = inputListAttribute.Tooltip;
             inputList.ElementType = elementType;
+            if (usesTypeParameter)
+            {
+                inputList.TypeParameterName = typeParameterPortAttribute.TypeParameterName;
+                inputList.TypeParameterIsArray = typeParameterPortAttribute.IsArray;
+            }
             inputList.CountOptionName = inputListAttribute.CountOptionName;
             inputList.MinimumCount = Math.Max(0, inputListAttribute.MinimumCount);
             inputList.MaximumCount = Math.Max(
@@ -294,6 +377,34 @@ namespace ShaderFactory.CozyNodes.Runtime
             }
         }
 
+        private static void ValidateTypeParameterDefinitions(CozyNodeDefinition definition)
+        {
+            foreach (CozyTypeParameterDefinition typeParameter in definition.TypeParameters)
+            {
+                if (!typeParameter.AllowArrayTypes)
+                    continue;
+
+                bool createsNestedArray = definition.Inputs.Exists(port =>
+                    port.TypeParameterName == typeParameter.Name &&
+                    port.TypeParameterIsArray) ||
+                    definition.Outputs.Exists(port =>
+                        port.TypeParameterName == typeParameter.Name &&
+                        port.TypeParameterIsArray) ||
+                    definition.InputLists.Exists(inputList =>
+                        inputList.TypeParameterName == typeParameter.Name &&
+                        inputList.TypeParameterIsArray);
+
+                if (!createsNestedArray)
+                    continue;
+
+                UnityEngine.Debug.LogError(
+                    $"Custom Cozy node '{definition.Title}' declares '{typeParameter.Name}' " +
+                    "with AllowArrayTypes and also uses T[]. Cozy Nodes does not " +
+                    "support nested arrays, so its type picker will use scalar choices.");
+                typeParameter.AllowArrayTypes = false;
+            }
+        }
+
         /// <summary>
         /// Returns whether a field can be rendered and serialized as a node option.
         /// </summary>
@@ -309,8 +420,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// </summary>
         public static bool IsSupportedPortValueType(Type valueType)
         {
-            return valueType == typeof(string) || valueType == typeof(int) ||
-                   valueType == typeof(float) || valueType == typeof(bool);
+            return CozyValueTypeRegistry.IsSupported(valueType);
         }
 
         /// <summary>
@@ -433,6 +543,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         public bool HasHeaderTextColor;
         public Color HeaderTextColor;
         public CozyGraphEntryDefinition Entry;
+        public readonly List<CozyTypeParameterDefinition> TypeParameters = new List<CozyTypeParameterDefinition>();
         public readonly List<CozyPortDefinition> Inputs = new List<CozyPortDefinition>();
         public readonly List<CozyPortDefinition> Outputs = new List<CozyPortDefinition>();
         public readonly List<CozyOptionDefinition> Options = new List<CozyOptionDefinition>();
@@ -446,6 +557,17 @@ namespace ShaderFactory.CozyNodes.Runtime
             {
                 if (option.Name == optionName)
                     return option;
+            }
+
+            return null;
+        }
+
+        public CozyTypeParameterDefinition FindTypeParameter(string typeParameterName)
+        {
+            foreach (CozyTypeParameterDefinition typeParameter in TypeParameters)
+            {
+                if (typeParameter.Name == typeParameterName)
+                    return typeParameter;
             }
 
             return null;
@@ -472,6 +594,9 @@ namespace ShaderFactory.CozyNodes.Runtime
         public string DisplayName;
         public string Tooltip;
         public Type ValueType;
+        public string TypeParameterName;
+        public bool TypeParameterIsArray;
+        public bool RequiresBlackboardVariable;
         public object DefaultValue;
         public bool IsInput;
         public bool IsOutput;
@@ -503,6 +628,8 @@ namespace ShaderFactory.CozyNodes.Runtime
         public string Tooltip;
         public string CountOptionName;
         public Type ElementType;
+        public string TypeParameterName;
+        public bool TypeParameterIsArray;
         public int MinimumCount;
         public int MaximumCount;
         public readonly List<object> DefaultValues = new List<object>();
@@ -517,5 +644,15 @@ namespace ShaderFactory.CozyNodes.Runtime
 
             return null;
         }
+    }
+
+    /// <summary>
+    /// A named type variable shared by several ports on one Cozy node.
+    /// </summary>
+    public sealed class CozyTypeParameterDefinition
+    {
+        public string Name;
+        public string DisplayName;
+        public bool AllowArrayTypes;
     }
 }

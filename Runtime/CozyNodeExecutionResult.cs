@@ -22,6 +22,17 @@ namespace ShaderFactory.CozyNodes.Runtime
         public string OutputPortName;
         public string ErrorMessage;
 
+        /// <summary>
+        /// A non-negative value makes a Waiting result a timed pause. The runner
+        /// owns this delay and follows <see cref="OutputPortName"/> when it
+        /// expires; ordinary Wait results keep this at -1 and require an
+        /// external trigger to resume.
+        /// </summary>
+        public float WaitDurationSeconds = -1f;
+
+        public bool IsTimedWait =>
+            ExecutionState == State.Waiting && WaitDurationSeconds >= 0f;
+
         public static CozyNodeExecutionResult ContinueWith(string outputPortName)
         {
             return new CozyNodeExecutionResult
@@ -60,6 +71,22 @@ namespace ShaderFactory.CozyNodes.Runtime
         public static CozyNodeExecutionResult Wait()
         {
             return new CozyNodeExecutionResult { ExecutionState = State.Waiting };
+        }
+
+        /// <summary>
+        /// Pauses the current flow for a scaled game-time duration, then follows
+        /// the named output without executing the waiting node a second time.
+        /// </summary>
+        public static CozyNodeExecutionResult WaitForSeconds(
+            float seconds,
+            string outputPortName)
+        {
+            return new CozyNodeExecutionResult
+            {
+                ExecutionState = State.Waiting,
+                WaitDurationSeconds = seconds,
+                OutputPortName = outputPortName
+            };
         }
 
         public static CozyNodeExecutionResult Finish()

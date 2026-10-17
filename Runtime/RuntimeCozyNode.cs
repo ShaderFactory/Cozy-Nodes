@@ -108,7 +108,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             }
 
             if (CozyValueConverter.TryConvert(value, port.GetValueType(), out object convertedValue))
-                return convertedValue;
+                return CozyValueTypeRegistry.CloneForRuntime(convertedValue);
 
             string sourceTypeName = value == null ? "null" : value.GetType().Name;
             string destinationTypeName = port.GetValueType()?.Name ?? "unknown";
@@ -280,7 +280,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             {
                 if (p.Key == key)
                 {
-                    p.SetValue(value);
+                    p.SetValue(value, valueType);
                     p.ValueTypeName = valueType?.AssemblyQualifiedName;
                     return;
                 }
@@ -289,7 +289,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             CozyRuntimePort entry = new (); // But if not, create a new entry.
             entry.Key = key;
             entry.ValueTypeName = valueType?.AssemblyQualifiedName;
-            entry.SetValue(value);
+            entry.SetValue(value, valueType);
             ports.Add(entry);
         }
 

@@ -10,7 +10,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// resolver and execution contract.
     /// </summary>
     [Serializable]
-    public class ReflectedCozyRuntimeNode : RuntimeCozyNode
+    public class ReflectedCozyRuntimeNode : RuntimeCozyNode, ICozyTriggerListener
     {
         /// <summary>
         /// Assembly-qualified type name selected in the Editor. A string keeps the
@@ -41,7 +41,7 @@ namespace ShaderFactory.CozyNodes.Runtime
                 return base.GetValue(port, cozyManager);
 
             CozyNodeContext context = new CozyNodeContext(this, cozyManager);
-            return customNode.GetValue(context, port.Key);
+            return CozyValueTypeRegistry.CloneForRuntime(customNode.GetValue(context, port.Key));
         }
 
         public override CozyNodeExecutionResult Run(CozyManager cozyManager)
@@ -78,6 +78,22 @@ namespace ShaderFactory.CozyNodes.Runtime
         {
             CozyNode customNode = GetCustomNode(cozyManager);
             customNode?.CancelFlowScope();
+        }
+
+        /// <summary>
+        /// Forwards an external trigger to a public CozyNode that explicitly
+        /// opts in to receiving one. The graph runner continues to deal only
+        /// with runtime nodes, while the authored node keeps its behavior in
+        /// the same public API as every other custom node.
+        /// </summary>
+        public bool TryReceiveTrigger(string triggerName, CozyManager cozyManager)
+        {
+            CozyNode customNode = GetCustomNode(cozyManager);
+            if (customNode is not ICozyNodeTriggerListener triggerListener)
+                return false;
+
+            CozyNodeContext context = new CozyNodeContext(this, cozyManager);
+            return triggerListener.TryReceiveTrigger(triggerName, context);
         }
 
         /// <summary>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using ShaderFactory.CozyNodes.Runtime;
 using Unity.GraphToolkit.Editor;
@@ -18,10 +19,34 @@ namespace ShaderFactory.CozyNodes.Editor
         [SerializeField] private string customNodeTypeName;
 
         [NonSerialized] private string definedInputListLayout;
+        [NonSerialized] private string definedTypeParameterLayout;
 
         private static readonly MethodInfo TryGetOptionValueMethod = FindTryGetOptionValueMethod();
 
         public string CustomNodeTypeName => customNodeTypeName;
+
+        /// <summary>
+        /// An unresolved type parameter has no concrete runtime representation.
+        /// Importers use this to reject a graph before an object-typed port could
+        /// slip into a player build.
+        /// </summary>
+        internal bool HasUnresolvedTypeParameters
+        {
+            get
+            {
+                CozyNodeDefinition definition = GetDefinition();
+                if (definition == null)
+                    return false;
+
+                foreach (CozyTypeParameterDefinition typeParameter in definition.TypeParameters)
+                {
+                    if (GetSelectedTypeParameterType(typeParameter.Name) == null)
+                        return true;
+                }
+
+                return false;
+            }
+        }
 
         protected override bool TryGetDefaultColor(out Color color)
         {
@@ -97,6 +122,21 @@ namespace ShaderFactory.CozyNodes.Editor
                     .WithDefaultValue(option.DefaultValue)
                     .Build();
             }
+
+            foreach (CozyTypeParameterDefinition typeParameter in definition.TypeParameters)
+            {
+                context.AddOption(
+                        GetTypeParameterOptionName(typeParameter.Name),
+                        CozyValueTypeRegistry.GetTypeParameterSelectionOptionType(
+                            typeParameter.AllowArrayTypes))
+                    .WithDisplayName(typeParameter.DisplayName)
+                    .WithTooltip(
+                        "Choose the concrete type used by every port that shares this parameter.")
+                    .WithDefaultValue(
+                        CozyValueTypeRegistry.GetDefaultTypeParameterSelection(
+                            typeParameter.AllowArrayTypes))
+                    .Build();
+            }
         }
 
         protected override void OnDefinePorts(IPortDefinitionContext context)
@@ -124,6 +164,7 @@ namespace ShaderFactory.CozyNodes.Editor
                 AddOutputPort(context, output);
 
             definedInputListLayout = GetInputListLayout(definition);
+            definedTypeParameterLayout = GetTypeParameterSelectionLayout(definition);
         }
 
         public override bool IsFlowInputPort(string portName)
@@ -147,12 +188,16 @@ namespace ShaderFactory.CozyNodes.Editor
         internal void RefreshInputListPorts()
         {
             CozyNodeDefinition definition = GetDefinition();
-            if (definition == null || definition.InputLists.Count == 0)
+            if (definition == null)
                 return;
 
-            string currentLayout = GetInputListLayout(definition);
-            if (currentLayout == definedInputListLayout)
+            string currentInputListLayout = GetInputListLayout(definition);
+            string currentTypeParameterLayout = GetTypeParameterSelectionLayout(definition);
+            if (currentInputListLayout == definedInputListLayout &&
+                currentTypeParameterLayout == definedTypeParameterLayout)
+            {
                 return;
+            }
 
             WarnAboutRemovedInputListConnections(definition);
             DefineNode();
@@ -222,6 +267,8 @@ namespace ShaderFactory.CozyNodes.Editor
                 port.DisplayName = inputList.DisplayName + " " + (index + 1);
                 port.Tooltip = inputList.Tooltip;
                 port.ValueType = inputList.ElementType;
+                port.TypeParameterName = inputList.TypeParameterName;
+                port.TypeParameterIsArray = inputList.TypeParameterIsArray;
                 port.IsInput = true;
                 port.DefaultValue = inputList.GetDefaultValue(index);
                 AddInputPort(context, port);
@@ -259,6 +306,204 @@ namespace ShaderFactory.CozyNodes.Editor
             }
 
             return layout.ToString();
+        }
+
+        /// <summary>
+        /// Returns the author-selected concrete type for every type parameter.
+        /// It is part of the node's structural layout: changing it requires
+        /// Graph Toolkit to rebuild the ports with their new types.
+        /// </summary>
+        private string GetTypeParameterSelectionLayout(CozyNodeDefinition definition)
+        {
+            if (definition.TypeParameters.Count == 0)
+                return string.Empty;
+
+            System.Text.StringBuilder layout = new System.Text.StringBuilder();
+            foreach (CozyTypeParameterDefinition typeParameter in definition.TypeParameters)
+            {
+                Type resolvedType = GetSelectedTypeParameterType(typeParameter.Name);
+                layout.Append(typeParameter.Name);
+                layout.Append('=');
+                layout.Append(resolvedType?.AssemblyQualifiedName ?? typeof(object).AssemblyQualifiedName);
+                layout.Append(';');
+            }
+
+            return layout.ToString();
+        }
+
+        private static string GetTypeParameterOptionName(string typeParameterName)
+        {
+            return "__cozy_type_" + typeParameterName;
+        }
+
+        private Type GetSelectedTypeParameterType(string typeParameterName)
+        {
+            CozyTypeParameterDefinition typeParameter = GetDefinition()
+                ?.FindTypeParameter(typeParameterName);
+            if (typeParameter == null)
+                return null;
+
+            INodeOption typeOption = GetNodeOptionByName(
+                GetTypeParameterOptionName(typeParameterName));
+            if (typeOption == null)
+                return null;
+
+            if (typeParameter.AllowArrayTypes &&
+                typeOption.TryGetValue(
+                    out CozyValueTypeParameterSelection valueSelection) &&
+                CozyValueTypeRegistry.TryGetTypeParameterValueType(
+                    valueSelection,
+                    out Type valueType))
+            {
+                return valueType;
+            }
+
+            // Existing graphs saved Set Variable as the scalar-only enum. Keep
+            // accepting that representation while Graph Toolkit rewrites the
+            // node using the new value-capable picker.
+            return typeOption.TryGetValue(out CozyTypeParameterSelection scalarSelection) &&
+                   CozyValueTypeRegistry.TryGetTypeParameterValueType(
+                       scalarSelection,
+                       out Type scalarType)
+                ? scalarType
+                : null;
+        }
+
+        internal bool TryGetTypeParameterPortDefinition(
+            string portName,
+            out string typeParameterName,
+            out bool isArray)
+        {
+            return TryGetTypeParameterPortDefinition(
+                GetDefinition(),
+                portName,
+                out typeParameterName,
+                out isArray);
+        }
+
+        /// <summary>
+        /// Returns the type Cozy will persist for this port. Generic port models
+        /// can still display object while Graph Toolkit is rebuilding the canvas;
+        /// imported runtime data must instead use Cozy's resolved T or T[].
+        /// </summary>
+        internal Type GetResolvedPortValueType(IPort port)
+        {
+            if (port == null || !TryGetTypeParameterPortDefinition(
+                    port.Name,
+                    out string typeParameterName,
+                    out bool isArray))
+            {
+                return port?.DataType;
+            }
+
+            Type parameterType = GetSelectedTypeParameterType(typeParameterName);
+            if (parameterType == null)
+                return port.DataType;
+
+            return isArray ? parameterType.MakeArrayType() : parameterType;
+        }
+
+        /// <summary>
+        /// Tests a prospective wire against the author-selected concrete type.
+        /// </summary>
+        internal bool CanConnectTypeParameterPort(IPort typeParameterPort, IPort otherPort)
+        {
+            if (typeParameterPort == null || otherPort == null ||
+                typeParameterPort.Direction == otherPort.Direction)
+            {
+                return false;
+            }
+
+            CozyNodeDefinition definition = GetDefinition();
+            if (!TryGetTypeParameterPortDefinition(
+                    definition,
+                    typeParameterPort.Name,
+                    out string typeParameterName,
+                    out bool isArray))
+            {
+                return false;
+            }
+
+            Type parameterType = GetSelectedTypeParameterType(typeParameterName);
+            if (parameterType == null)
+                return false;
+
+            Type typeParameterPortType = isArray
+                ? parameterType.MakeArrayType()
+                : parameterType;
+
+            if (typeParameterPort.Direction == PortDirection.Output)
+            {
+                return CozyValueConverter.CanConvert(
+                    typeParameterPortType,
+                    otherPort.DataType);
+            }
+
+            return otherPort.DataType == typeParameterPortType;
+        }
+
+        internal bool RequiresBlackboardVariablePort(string portName)
+        {
+            CozyNodeDefinition definition = GetDefinition();
+            if (definition == null)
+                return false;
+
+            foreach (CozyPortDefinition input in definition.Inputs)
+            {
+                if (input.Name == portName)
+                    return input.RequiresBlackboardVariable;
+            }
+
+            return false;
+        }
+
+        private static bool TryGetTypeParameterPortDefinition(
+            CozyNodeDefinition definition,
+            string portName,
+            out string typeParameterName,
+            out bool isArray)
+        {
+            typeParameterName = null;
+            isArray = false;
+            if (definition == null)
+                return false;
+
+            foreach (CozyPortDefinition portDefinition in definition.Inputs)
+            {
+                if (portDefinition.Name != portName)
+                    continue;
+
+                typeParameterName = portDefinition.TypeParameterName;
+                isArray = portDefinition.TypeParameterIsArray;
+                return !string.IsNullOrEmpty(typeParameterName);
+            }
+
+            foreach (CozyPortDefinition portDefinition in definition.Outputs)
+            {
+                if (portDefinition.Name != portName)
+                    continue;
+
+                typeParameterName = portDefinition.TypeParameterName;
+                isArray = portDefinition.TypeParameterIsArray;
+                return !string.IsNullOrEmpty(typeParameterName);
+            }
+
+            foreach (CozyInputListDefinition inputList in definition.InputLists)
+            {
+                if (!CozyNodeReflection.TryGetInputListPortIndex(
+                        inputList.Name,
+                        portName,
+                        out _))
+                {
+                    continue;
+                }
+
+                typeParameterName = inputList.TypeParameterName;
+                isArray = inputList.TypeParameterIsArray;
+                return !string.IsNullOrEmpty(typeParameterName);
+            }
+
+            return false;
         }
 
         private void WarnAboutRemovedInputListConnections(CozyNodeDefinition definition)
@@ -341,23 +586,21 @@ namespace ShaderFactory.CozyNodes.Editor
 
         private void AddInputPort(IPortDefinitionContext context, CozyPortDefinition definition)
         {
-            // CozyRuntimePort currently supports these primitive value types. Keep
-            // this explicit so an unsupported game field fails clearly instead of
-            // producing a graph connection that cannot be serialized at runtime.
-            if (definition.ValueType == typeof(string))
+            if (!string.IsNullOrEmpty(definition.TypeParameterName))
             {
-                if (definition.IsTextArea)
-                {
-                    context.AddInputPort<string>(definition.Name)
-                        .AsTextArea(definition.MinTextAreaLines, definition.MaxTextAreaLines)
-                        .WithDisplayName(definition.DisplayName)
-                        .WithTooltip(definition.Tooltip)
-                        .WithDefaultValue(definition.DefaultValue as string)
-                        .Build();
-                    return;
-                }
+                AddTypeParameterInputPort(
+                    context,
+                    definition,
+                    ResolvePortValueType(definition));
+                return;
+            }
 
+            // A text area is presentation metadata for a normal string port.
+            // All other supported graph values use the same typed builder path.
+            if (definition.ValueType == typeof(string) && definition.IsTextArea)
+            {
                 context.AddInputPort<string>(definition.Name)
+                    .AsTextArea(definition.MinTextAreaLines, definition.MaxTextAreaLines)
                     .WithDisplayName(definition.DisplayName)
                     .WithTooltip(definition.Tooltip)
                     .WithDefaultValue(definition.DefaultValue as string)
@@ -365,82 +608,87 @@ namespace ShaderFactory.CozyNodes.Editor
                 return;
             }
 
-            if (definition.ValueType == typeof(int))
+            // Keep this validation at the editor boundary so an unsupported
+            // game field never creates a graph port that runtime cannot save.
+            if (!CozyValueTypeRegistry.IsSupported(definition.ValueType))
             {
-                context.AddInputPort<int>(definition.Name)
-                    .WithDisplayName(definition.DisplayName)
-                    .WithTooltip(definition.Tooltip)
-                    .WithDefaultValue(definition.DefaultValue is int value ? value : 0)
-                    .Build();
+                Debug.LogError(
+                    $"Custom Cozy node '{Title}' has an unsupported input type " +
+                    $"'{definition.ValueType?.Name}' on '{definition.Name}'.");
                 return;
             }
 
-            if (definition.ValueType == typeof(float))
-            {
-                context.AddInputPort<float>(definition.Name)
-                    .WithDisplayName(definition.DisplayName)
-                    .WithTooltip(definition.Tooltip)
-                    .WithDefaultValue(definition.DefaultValue is float value ? value : 0f)
-                    .Build();
-                return;
-            }
+            ITypedInputPortBuilder builder = context.AddInputPort(definition.Name)
+                .WithDataType(definition.ValueType)
+                .WithDisplayName(definition.DisplayName)
+                .WithTooltip(definition.Tooltip);
 
-            if (definition.ValueType == typeof(bool))
-            {
-                context.AddInputPort<bool>(definition.Name)
-                    .WithDisplayName(definition.DisplayName)
-                    .WithTooltip(definition.Tooltip)
-                    .WithDefaultValue(definition.DefaultValue is bool value && value)
-                    .Build();
-                return;
-            }
+            // Arrays remain wire values rather than inline list fields. Nodes
+            // construct them through Array Make or retrieve them from variables.
+            if (!definition.ValueType.IsArray)
+                builder.WithDefaultValue(definition.DefaultValue);
 
-            Debug.LogError(
-                $"Custom Cozy node '{Title}' has an unsupported input type " +
-                $"'{definition.ValueType?.Name}' on '{definition.Name}'.");
+            builder.Build();
         }
 
         private void AddOutputPort(IPortDefinitionContext context, CozyPortDefinition definition)
         {
-            if (definition.ValueType == typeof(string))
+            if (!string.IsNullOrEmpty(definition.TypeParameterName))
             {
-                context.AddOutputPort<string>(definition.Name)
+                context.AddOutputPort(definition.Name)
+                    .WithDataType(ResolvePortValueType(definition))
                     .WithDisplayName(definition.DisplayName)
                     .WithTooltip(definition.Tooltip)
                     .Build();
                 return;
             }
 
-            if (definition.ValueType == typeof(int))
+            if (!CozyValueTypeRegistry.IsSupported(definition.ValueType))
             {
-                context.AddOutputPort<int>(definition.Name)
-                    .WithDisplayName(definition.DisplayName)
-                    .WithTooltip(definition.Tooltip)
-                    .Build();
+                Debug.LogError(
+                    $"Custom Cozy node '{Title}' has an unsupported output type " +
+                    $"'{definition.ValueType?.Name}' on '{definition.Name}'.");
                 return;
             }
 
-            if (definition.ValueType == typeof(float))
+            context.AddOutputPort(definition.Name)
+                .WithDataType(definition.ValueType)
+                .WithDisplayName(definition.DisplayName)
+                .WithTooltip(definition.Tooltip)
+                .Build();
+        }
+
+        private Type ResolvePortValueType(CozyPortDefinition definition)
+        {
+            if (string.IsNullOrEmpty(definition.TypeParameterName))
+                return definition.ValueType;
+
+            Type valueType = GetSelectedTypeParameterType(definition.TypeParameterName);
+            if (valueType == null)
+                return typeof(object);
+
+            return definition.TypeParameterIsArray
+                ? valueType.MakeArrayType()
+                : valueType;
+        }
+
+        private static void AddTypeParameterInputPort(
+            IPortDefinitionContext context,
+            CozyPortDefinition definition,
+            Type valueType)
+        {
+            ITypedInputPortBuilder builder = context.AddInputPort(definition.Name)
+                .WithDataType(valueType)
+                .WithDisplayName(definition.DisplayName)
+                .WithTooltip(definition.Tooltip);
+
+            if (valueType != typeof(object) && !valueType.IsArray)
             {
-                context.AddOutputPort<float>(definition.Name)
-                    .WithDisplayName(definition.DisplayName)
-                    .WithTooltip(definition.Tooltip)
-                    .Build();
-                return;
+                builder.WithDefaultValue(
+                    CozyValueTypeRegistry.CreateDefaultValue(valueType));
             }
 
-            if (definition.ValueType == typeof(bool))
-            {
-                context.AddOutputPort<bool>(definition.Name)
-                    .WithDisplayName(definition.DisplayName)
-                    .WithTooltip(definition.Tooltip)
-                    .Build();
-                return;
-            }
-
-            Debug.LogError(
-                $"Custom Cozy node '{Title}' has an unsupported output type " +
-                $"'{definition.ValueType?.Name}' on '{definition.Name}'.");
+            builder.Build();
         }
     }
 }

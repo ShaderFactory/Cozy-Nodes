@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.GraphToolkit.Editor;
 using UnityEditor.AssetImporters;
+using System;
 using System.Linq;
 using System.Collections.Generic;
 using ShaderFactory.CozyNodes.Runtime;
@@ -9,7 +10,7 @@ namespace ShaderFactory.CozyNodes.Editor
 {
     // Increment this version whenever imported runtime data changes. Unity will then
     // rebuild existing .cozygraph assets instead of running stale runtime data.
-    [ScriptedImporter(27, CozyGraph.AssetExtension)]
+    [ScriptedImporter(30, CozyGraph.AssetExtension)]
     public class CozyGraphImporter : ScriptedImporter
     {
         public override void OnImportAsset(AssetImportContext ctx)
@@ -53,7 +54,7 @@ namespace ShaderFactory.CozyNodes.Editor
                 object defaultValue = CozyPortValueImporter.GetVariableDefaultValue(
                     editorVariable,
                     editorVariable.DataType);
-                runtimeDefinition.DefaultValue.SetValue(defaultValue);
+                runtimeDefinition.DefaultValue.SetValue(defaultValue, editorVariable.DataType);
 
                 cozyGraphRuntime.VariableDefinitions.Add(runtimeDefinition);
             }
@@ -68,6 +69,15 @@ namespace ShaderFactory.CozyNodes.Editor
                         nodesIdDictionary,
                         cozyGraphRuntime))
                 {
+                    continue;
+                }
+
+                if (editorNode is CustomCozyNode customCozyNode &&
+                    customCozyNode.HasUnresolvedTypeParameters)
+                {
+                    Debug.LogError(
+                        $"Cannot import '{customCozyNode.Title}' because one or more " +
+                        "type parameters have no selected type. Choose a type in the node UI.");
                     continue;
                 }
 
@@ -96,21 +106,31 @@ namespace ShaderFactory.CozyNodes.Editor
                 foreach (IPort port in editorNode.GetInputPorts())
                 {
                     if (!cozyEditorNode.IsFlowInputPort(port.Name))
+                    {
+                        Type portValueType = editorNode is CustomCozyNode customNode
+                            ? customNode.GetResolvedPortValueType(port)
+                            : port.DataType;
                         runtimeNode.RegisterPort(
                             port.Name,
                             CozyPortValueImporter.GetPortValue(port, nodesIdDictionary),
                             false,
-                            port.DataType);
+                            portValueType);
+                    }
                 }
 
                 foreach (IPort port in editorNode.GetOutputPorts())
                 {
                     if (!cozyEditorNode.IsFlowOutputPort(port.Name))
+                    {
+                        Type portValueType = editorNode is CustomCozyNode customNode
+                            ? customNode.GetResolvedPortValueType(port)
+                            : port.DataType;
                         runtimeNode.RegisterPort(
                             port.Name,
                             CozyPortValueImporter.GetPortValue(port, nodesIdDictionary),
                             true,
-                            port.DataType);
+                            portValueType);
+                    }
                 }
 
                 // Import every connected flow output. A node can now choose which

@@ -1,6 +1,7 @@
 namespace ShaderFactory.CozyNodes.Runtime
 {
     [CozyNodeMenu("Utilities/String", "String Contains")]
+    [CozyNodeIcon("Packages/com.shaderfactory.cozynodes/Editor/Icons/StringContains.png")]
     public class StringContainsNode : CozyStringNode
     {
         [Input]

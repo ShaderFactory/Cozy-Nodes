@@ -99,6 +99,36 @@ namespace ShaderFactory.CozyNodes.Runtime
         }
 
         /// <summary>
+        /// Returns the concrete type currently assigned to one output. Generic
+        /// Cozy nodes use this to construct a value whose element type was
+        /// selected by the graph author.
+        /// </summary>
+        public Type GetOutputValueType(string outputPortName)
+        {
+            return runtimeNode?.GetPortByName(outputPortName)?.GetValueType();
+        }
+
+        /// <summary>
+        /// Gets the Blackboard reference carried by an input connected directly to
+        /// a Blackboard variable node. This deliberately differs from
+        /// <see cref="GetInputValue"/>, which resolves that reference to the
+        /// variable's current value.
+        /// </summary>
+        public bool TryGetInputVariableReference(
+            string inputPortName,
+            out RuntimeVariableReference variableReference)
+        {
+            variableReference = null;
+            CozyRuntimePort inputPort = runtimeNode?.GetPortByName(inputPortName);
+            if (inputPort?.type != CozyRuntimePort.PortType.Variable)
+                return false;
+
+            variableReference = inputPort.variableReference;
+            return variableReference != null &&
+                   !string.IsNullOrEmpty(variableReference.variableID);
+        }
+
+        /// <summary>
         /// Gets configuration stored in this node's Options section. Options are
         /// local to the node and are never read from graph connections.
         /// </summary>

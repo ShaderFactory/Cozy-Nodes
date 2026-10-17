@@ -35,10 +35,70 @@ Game code creates a node by inheriting from `CozyNode`. The package generates
 its editor representation, so custom nodes never reference UnityEditor or Graph
 Toolkit APIs directly.
 
-Use `[Input]` and `[Output]` for graph values. Use `[Option]` for local node
-configuration that should appear in the node's **Options** section. Options
-support `string`, `int`, `float`, `bool`, and enums; read their graph-specific
-values at runtime with `context.GetOptionValue<T>(nameof(Field))`.
+Use `[Input]` and `[Output]` for graph values. Cozy values currently support
+`string`, `int`, `float`, `bool`, and one-dimensional arrays of those types.
+Their serialization, defaults, and runtime copy behavior are defined in one
+central value-type registry, so adding a future built-in type follows one
+deliberate path rather than scattering per-type array handling through nodes.
+Use `[Option]` for local node configuration that should appear in the node's
+**Options** section. Options support `string`, `int`, `float`, `bool`, and
+enums; read their graph-specific values at runtime with
+`context.GetOptionValue<T>(nameof(Field))`.
+
+Arrays are ordinary typed graph values. A game-authored node can declare
+`[Input] public int[] Values;` and read it with
+`context.GetInputValue<int[]>(nameof(Values))`. Cozy Nodes gives array values
+copy semantics: a port or Blackboard read receives its own array instance.
+`[InputList]` is different: it is an editor convenience for a variable number of
+individual input ports, not an array travelling through a wire.
+
+The built-in **Utilities/Array** nodes provide the first authoring path:
+**Array Make** creates a typed array from configurable element inputs,
+**Array Length** returns its size, and **Array Get Item** reads an index without
+throwing. Get Item returns both **Item** and **Is Valid**, so a graph can handle
+an out-of-range index explicitly.
+
+Graph Toolkit has no public wildcard-value port API. Cozy Nodes therefore uses
+its own explicit type-parameter metadata instead of pretending that a normal
+`object` port is type-safe. Once resolved, an Int array wire can only connect
+to an Int array input.
+
+For a type parameter that represents a complete value, declare
+`[CozyTypeParameter("T", AllowArrayTypes = true)]`. Its picker offers the
+supported scalar types and their one-dimensional array forms. Do not enable
+that setting on a parameter used as `T[]`: Cozy Nodes deliberately does not
+support nested arrays.
+
+### Type-parameter nodes
+
+When a node must work for more than one scalar type, declare a shared type
+parameter rather than using `object` as a normal port type. The graph author
+chooses the parameter's concrete type in the node UI, and Cozy rebuilds every
+matching port from that single persisted selection.
+
+```csharp
+[CozyNodeMenu("Utilities/Array", "Array Make")]
+public class ArrayMakeNode : CozyArrayNode
+{
+    [Option("Element Count")]
+    public int ElementCount = 2;
+
+    [InputList(nameof(ElementCount), "Element")]
+    [CozyTypeParameterPort("T")]
+    public object[] Elements;
+
+    [Output("Array")]
+    [CozyTypeParameterPort("T", IsArray = true)]
+    public object Result;
+}
+```
+
+`object` here is only an implementation backing field. It never becomes the
+graph's actual port type: `T` resolves to `string`, `int`, `float`, or `bool`,
+and `T[]` resolves to the matching one-dimensional array type. A node can
+explicitly opt in to using `T` itself as an array when that is meaningful, such
+as **Set Variable**. A node with no selected type cannot be imported into a
+runtime graph.
 
 `[InputList]` creates a repeated input group whose count is controlled by an
 integer option. Declare it on an array field, then read its values in graph order
@@ -47,6 +107,11 @@ with `context.GetInputValues<T>(nameof(Field))`.
 Flow nodes override `Execute` instead of `GetValue`. Use `[FlowInput]` and one
 or more `[FlowOutput("Name")]` attributes to declare execution ports, then
 return `CozyNodeExecutionResult.ContinueWith("Name")` for the path to follow.
+
+**Control Flow > Wait For Seconds** pauses only its current graph flow for the
+given number of scaled game-time seconds, then follows `out`. The pause belongs
+to `CozyGraphRunner`, so it works inside a `For` Body: the next iteration begins
+only after the waiting branch finishes.
 
 ```csharp
 [CozyNodeMenu("Utilities/String", "Combine String")]
@@ -147,6 +212,15 @@ This is different from **Wait for Trigger**. A Custom Event starts a new graph
 path; Wait for Trigger resumes the flow that has already reached that node. A
 `CozyManager` currently runs one flow at a time, so a Custom Event is not
 started while another flow is still running.
+
+**Control Flow > Wait For Trigger** waits for a matching signal from game code:
+
+```csharp
+cozyManager.Trigger("Advance Dialogue");
+```
+
+Only the current waiting flow can accept the signal. A different name, or a
+signal sent while the graph is not waiting at this node, is ignored.
 
 ## Nodes
 

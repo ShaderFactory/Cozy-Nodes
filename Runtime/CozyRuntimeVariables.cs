@@ -28,9 +28,14 @@ namespace ShaderFactory.CozyNodes.Runtime
 
                 object defaultValue = null;
                 if (definition.DefaultValue != null)
-                    defaultValue = definition.DefaultValue.GetValue();
+                {
+                    Type declaredType = string.IsNullOrEmpty(definition.ValueTypeName)
+                        ? null
+                        : Type.GetType(definition.ValueTypeName);
+                    defaultValue = definition.DefaultValue.GetValue(declaredType);
+                }
 
-                valuesByID[definition.VariableID] = defaultValue;
+                valuesByID[definition.VariableID] = CozyValueTypeRegistry.CloneForRuntime(defaultValue);
                 definitionsByID[definition.VariableID] = definition;
             }
         }
@@ -41,7 +46,11 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// </summary>
         public bool TryGetValue(string variableID, out object value)
         {
-            return valuesByID.TryGetValue(variableID, out value);
+            if (!valuesByID.TryGetValue(variableID, out value))
+                return false;
+
+            value = CozyValueTypeRegistry.CloneForRuntime(value);
+            return true;
         }
 
         /// <summary>
@@ -75,7 +84,7 @@ namespace ShaderFactory.CozyNodes.Runtime
                 return false;
             }
 
-            valuesByID[variableID] = value;
+            valuesByID[variableID] = CozyValueTypeRegistry.CloneForRuntime(value);
             errorMessage = null;
             return true;
         }

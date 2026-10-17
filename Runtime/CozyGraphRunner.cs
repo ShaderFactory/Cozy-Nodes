@@ -28,6 +28,8 @@ namespace ShaderFactory.CozyNodes.Runtime
         private string enteredFlowInputName;
         private bool isRunning;
         private bool isWaiting;
+        private float remainingWaitSeconds = -1f;
+        private string timedWaitOutputPortName;
 
         private readonly struct FlowContinuation
         {
@@ -132,6 +134,8 @@ namespace ShaderFactory.CozyNodes.Runtime
 
             isRunning = true;
             isWaiting = false;
+            remainingWaitSeconds = -1f;
+            timedWaitOutputPortName = null;
             continuationNodes.Clear();
             enteredFlowInputName = string.IsNullOrWhiteSpace(entryInputPortName)
                 ? "in"
@@ -159,6 +163,35 @@ namespace ShaderFactory.CozyNodes.Runtime
             RunUntilPauseOrEnd();
         }
 
+        /// <summary>
+        /// Advances a timed graph pause using scaled game time. CozyManager calls
+        /// this from Update; a normal trigger wait is intentionally unaffected.
+        /// </summary>
+        public void Update(float deltaTime)
+        {
+            if (!isRunning || !isWaiting || remainingWaitSeconds < 0f)
+                return;
+
+            remainingWaitSeconds -= Math.Max(0f, deltaTime);
+            if (remainingWaitSeconds > 0f)
+                return;
+
+            string outputPortName = timedWaitOutputPortName;
+            remainingWaitSeconds = -1f;
+            timedWaitOutputPortName = null;
+            isWaiting = false;
+
+            if (string.IsNullOrEmpty(outputPortName))
+            {
+                Debug.LogError("Timed wait did not choose a flow output.");
+                StopGraph();
+                return;
+            }
+
+            if (TryAdvanceFlow(CozyNodeExecutionResult.ContinueWith(outputPortName)))
+                RunUntilPauseOrEnd();
+        }
+
         private void BuildNodeLookup(RuntimeCozyGraph runtimeGraph)
         {
             nodeLookup.Clear();
@@ -184,6 +217,20 @@ namespace ShaderFactory.CozyNodes.Runtime
 
                 if (result.ExecutionState == CozyNodeExecutionResult.State.Waiting)
                 {
+                    if (result.IsTimedWait)
+                    {
+                        if (string.IsNullOrEmpty(result.OutputPortName))
+                        {
+                            Debug.LogError(
+                                $"Node '{currentNode.NodeType}' started a timed wait without choosing a flow output.");
+                            StopGraph();
+                            return;
+                        }
+
+                        remainingWaitSeconds = result.WaitDurationSeconds;
+                        timedWaitOutputPortName = result.OutputPortName;
+                    }
+
                     isWaiting = true;
                     return;
                 }
@@ -201,60 +248,72 @@ namespace ShaderFactory.CozyNodes.Runtime
                     return;
                 }
 
-                bool isCall = result.ExecutionState == CozyNodeExecutionResult.State.Call;
-                bool exitsScope = result.ExecutionState == CozyNodeExecutionResult.State.ExitScope;
-
-                if (exitsScope && !TryExitScope(currentNode))
-                {
-                    Debug.LogError(
-                        $"Node '{currentNode.NodeType}' tried to exit a flow scope that is not active.");
-                    StopGraph();
+                if (!TryAdvanceFlow(result))
                     return;
-                }
-
-                if (string.IsNullOrEmpty(result.OutputPortName))
-                {
-                    Debug.LogError($"Node '{currentNode.NodeType}' continued without choosing a flow output.");
-                    StopGraph();
-                    return;
-                }
-
-                if (!currentNode.TryGetFlowOutput(
-                        result.OutputPortName,
-                        out RuntimeFlowConnection flowConnection))
-                {
-                    if (isCall)
-                    {
-                        // Calling an unconnected body is an immediate return to
-                        // the caller, which can advance to its next iteration.
-                        enteredFlowInputName = null;
-                        continue;
-                    }
-
-                    if (TryResumeContinuation())
-                        continue;
-
-                    // An unconnected flow output is a valid end to a graph.
-                    StopGraph();
-                    return;
-                }
-
-                RuntimeCozyNode callingNode = currentNode;
-                if (!nodeLookup.TryGetValue(flowConnection.NextNodeID, out RuntimeCozyNode nextNode))
-                {
-                    Debug.LogError($"Flow output '{result.OutputPortName}' points to a missing node.");
-                    StopGraph();
-                    return;
-                }
-
-                if (isCall)
-                    continuationNodes.Push(new FlowContinuation(callingNode));
-
-                currentNode = nextNode;
-                enteredFlowInputName = string.IsNullOrWhiteSpace(flowConnection.NextInputPortName)
-                    ? "in"
-                    : flowConnection.NextInputPortName;
             }
+        }
+
+        /// <summary>
+        /// Follows one flow result from the current node. Both immediate results
+        /// and a completed timed wait use this path, so their continuation and
+        /// loop-scope behavior cannot drift apart.
+        /// </summary>
+        private bool TryAdvanceFlow(CozyNodeExecutionResult result)
+        {
+            bool isCall = result.ExecutionState == CozyNodeExecutionResult.State.Call;
+            bool exitsScope = result.ExecutionState == CozyNodeExecutionResult.State.ExitScope;
+
+            if (exitsScope && !TryExitScope(currentNode))
+            {
+                Debug.LogError(
+                    $"Node '{currentNode.NodeType}' tried to exit a flow scope that is not active.");
+                StopGraph();
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(result.OutputPortName))
+            {
+                Debug.LogError($"Node '{currentNode.NodeType}' continued without choosing a flow output.");
+                StopGraph();
+                return false;
+            }
+
+            if (!currentNode.TryGetFlowOutput(
+                    result.OutputPortName,
+                    out RuntimeFlowConnection flowConnection))
+            {
+                if (isCall)
+                {
+                    // Calling an unconnected body is an immediate return to
+                    // the caller, which can advance to its next iteration.
+                    enteredFlowInputName = null;
+                    return true;
+                }
+
+                if (TryResumeContinuation())
+                    return true;
+
+                // An unconnected flow output is a valid end to a graph.
+                StopGraph();
+                return false;
+            }
+
+            RuntimeCozyNode callingNode = currentNode;
+            if (!nodeLookup.TryGetValue(flowConnection.NextNodeID, out RuntimeCozyNode nextNode))
+            {
+                Debug.LogError($"Flow output '{result.OutputPortName}' points to a missing node.");
+                StopGraph();
+                return false;
+            }
+
+            if (isCall)
+                continuationNodes.Push(new FlowContinuation(callingNode));
+
+            currentNode = nextNode;
+            enteredFlowInputName = string.IsNullOrWhiteSpace(flowConnection.NextInputPortName)
+                ? "in"
+                : flowConnection.NextInputPortName;
+            return true;
         }
 
         private bool TryResumeContinuation()
@@ -298,6 +357,8 @@ namespace ShaderFactory.CozyNodes.Runtime
         {
             isRunning = false;
             isWaiting = false;
+            remainingWaitSeconds = -1f;
+            timedWaitOutputPortName = null;
             currentNode?.CancelFlowScope(cozyManager);
             currentNode = null;
             enteredFlowInputName = null;

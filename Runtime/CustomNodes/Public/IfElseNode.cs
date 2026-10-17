@@ -4,6 +4,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// Chooses one of two execution paths from a boolean condition.
     /// </summary>
     [CozyNodeMenu("Control Flow", "If/Else")]
+    [CozyNodeIcon("Packages/com.shaderfactory.cozynodes/Editor/Icons/IfElse.png")]
     [FlowInput]
     [FlowOutput("True")]
     [FlowOutput("False")]

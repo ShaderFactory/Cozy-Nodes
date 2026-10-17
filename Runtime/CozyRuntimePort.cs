@@ -20,16 +20,16 @@ namespace ShaderFactory.CozyNodes.Runtime
 
         private RuntimeCozyNode node;
 
-        // UNITY-SERIALIZABLE TYPE FIELDS  
-        public string stringValue;
-        public float floatValue;
-        public int intValue;
-        public bool boolValue;
+        /// <summary>
+        /// Local value stored by this port. The wrapper supports both scalar and
+        /// one-dimensional array values without adding a bespoke field per type.
+        /// </summary>
+        public CozySerializedValue LocalValue = new();
         public RuntimePortReference portReference;
         public RuntimeVariableReference variableReference;
 
         /// <summary> Defines the types of values a port can have. If a node is connect, value type will be port. </summary>
-        public enum PortType { String, Float, Int, Bool, Port, Variable, SpecialCode}
+        public enum PortType { Value, Port, Variable, SpecialCode}
 
         /// <summary> Stores which value should be used. (What is connected to thi) </summary>
         public PortType type;
@@ -38,59 +38,26 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// 
         /// </summary>
         /// <param name="val"></param>
-        public void SetValue (object _value)
+        public void SetValue(object value, Type declaredType = null)
         {
-            if (_value is float f)
-            {
-                type = PortType.Float;
-                floatValue = f;
-                ImportMessage = "Float";
-            }
-            else if (_value is int i)
-            {
-                type = PortType.Int;
-                intValue = i;
-                ImportMessage = "Integer";
-            }
-            else if (_value is bool b)
-            {
-                type = PortType.Bool;
-                boolValue = b;
-                ImportMessage = "Boolean";
-            }
-            else if (_value is string s)
-            {
-                type = PortType.String;
-                stringValue = s;
-                ImportMessage = "String";
-            }
-            else if (_value is RuntimePortReference reference)
+            if (value is RuntimePortReference reference)
             {
                 type = PortType.Port;
                 portReference = reference;
                 ImportMessage = "Connected Port";
             }
-            else if (_value is RuntimeVariableReference referenceToVariable)
+            else if (value is RuntimeVariableReference referenceToVariable)
             {
                 type = PortType.Variable;
                 variableReference = referenceToVariable;
                 ImportMessage = "Blackboard Variable";
             }
-            /*else if (_value is RuntimeIVariable riv)
+            else
             {
-                Type = PortType.Port;
-                PortValue = new RuntimeIPort(riv.nodeID, riv.variableName);
-                ImportMessage = "Variable (Connected Node)";
-            }
-            else if (_value is RuntimeIConstant ric)
-            {
-                Type = PortType.Port;
-                PortValue = new RuntimeIPort(ric.nodeID, ric.constantName);
-                ImportMessage = "Constant (Connected Node)";
-            }*/
-            else if (_value is null)
-            {
-                ImportMessage = "Import Failed!";
+                type = PortType.Value;
+                LocalValue ??= new CozySerializedValue();
+                LocalValue.SetValue(value, declaredType);
+                ImportMessage = value is Array ? "Array" : "Local Value";
             }
         }
 
@@ -102,14 +69,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// <summary> Reads the value if the port is not connected, evaluates the value if so. </summary>
         public object GetValue()
         {
-            return type switch
-            {
-                PortType.Float => floatValue,
-                PortType.Int => intValue,
-                PortType.String => stringValue,
-                PortType.Bool => boolValue,
-                _ => null
-            };
+            return LocalValue?.GetValue(GetValueType());
         }
 
         public Type GetValueType()

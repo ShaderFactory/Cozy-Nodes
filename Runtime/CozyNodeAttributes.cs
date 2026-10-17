@@ -13,6 +13,35 @@ namespace ShaderFactory.CozyNodes.Runtime
     }
 
     /// <summary>
+    /// The author-selected concrete type for a Cozy node type parameter.
+    /// </summary>
+    public enum CozyTypeParameterSelection
+    {
+        String = 1,
+        Int = 2,
+        Float = 3,
+        Bool = 4
+    }
+
+    /// <summary>
+    /// The concrete value choices offered by a type parameter that explicitly
+    /// allows arrays. The scalar values deliberately keep the same numeric
+    /// values as <see cref="CozyTypeParameterSelection"/>, so a previously
+    /// saved scalar choice remains meaningful when a node gains array support.
+    /// </summary>
+    public enum CozyValueTypeParameterSelection
+    {
+        String = 1,
+        Int = 2,
+        Float = 3,
+        Bool = 4,
+        ArrayOfString = 5,
+        ArrayOfInt = 6,
+        ArrayOfFloat = 7,
+        ArrayOfBool = 8
+    }
+
+    /// <summary>
     /// Describes where a game node appears in Cozy Nodes' type picker.
     /// This metadata is intentionally runtime-safe so the same class can be
     /// discovered in the Editor and used in a player build.
@@ -100,6 +129,56 @@ namespace ShaderFactory.CozyNodes.Runtime
             CountOptionName = countOptionName;
             DisplayName = displayName;
         }
+    }
+
+    /// <summary>
+    /// Declares a named type parameter on a public CozyNode. The author can
+    /// change its concrete type in the node UI, and every port using that
+    /// parameter is defined with the same type.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    public sealed class CozyTypeParameterAttribute : Attribute
+    {
+        public string Name { get; }
+        public string DisplayName { get; }
+        /// <summary>
+        /// Lets T itself resolve to one of Cozy's supported one-dimensional array
+        /// types. Use this for polymorphic nodes such as Set Variable; leave it
+        /// false for nodes where T is an array element type.
+        /// </summary>
+        public bool AllowArrayTypes { get; set; }
+
+        public CozyTypeParameterAttribute(string name, string displayName = null)
+        {
+            Name = name;
+            DisplayName = displayName;
+        }
+    }
+
+    /// <summary>
+    /// Uses a node type parameter for a value port or an InputList. The backing
+    /// field must be object for an ordinary port, or object[] for an InputList.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field, Inherited = true)]
+    public sealed class CozyTypeParameterPortAttribute : Attribute
+    {
+        public string TypeParameterName { get; }
+        public bool IsArray { get; set; }
+
+        public CozyTypeParameterPortAttribute(string typeParameterName)
+        {
+            TypeParameterName = typeParameterName;
+        }
+    }
+
+    /// <summary>
+    /// Requires an input to be connected directly to a Graph Toolkit Blackboard
+    /// variable. The port uses its node's selected concrete type, while the
+    /// runtime receives the variable's stable reference.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field, Inherited = true)]
+    public sealed class CozyBlackboardVariableAttribute : Attribute
+    {
     }
 
     /// <summary>

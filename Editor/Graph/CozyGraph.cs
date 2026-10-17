@@ -133,7 +133,7 @@ namespace ShaderFactory.CozyNodes.Editor
             foreach (var node in GetNodes())
             {
                 CheckMultipleConnectionWarning(node, graphLogger);
-                CheckSetVariableError(node, graphLogger);
+                CheckBlackboardVariableInputs(node, graphLogger);
             }
         }
 
@@ -144,17 +144,68 @@ namespace ShaderFactory.CozyNodes.Editor
         /// </summary>
         public override bool IsConnectionAllowed(IPort firstPort, IPort secondPort)
         {
-            if (base.IsConnectionAllowed(firstPort, secondPort))
-                return true;
-
             if (firstPort == null || secondPort == null)
                 return false;
 
-            IPort outputPort = firstPort.Direction == PortDirection.Output ? firstPort : secondPort;
             IPort inputPort = firstPort.Direction == PortDirection.Input ? firstPort : secondPort;
-
-            if (outputPort.Direction != PortDirection.Output || inputPort.Direction != PortDirection.Input)
+            IPort outputPort = firstPort.Direction == PortDirection.Output ? firstPort : secondPort;
+            if (inputPort.Direction != PortDirection.Input ||
+                outputPort.Direction != PortDirection.Output)
+            {
                 return false;
+            }
+
+            // A Cozy value input represents one value. Repeated values use an
+            // InputList, which creates one port per element, rather than multiple
+            // competing wires into the same port.
+            if (inputPort.IsConnected)
+            {
+                List<IPort> connectedPorts = new List<IPort>();
+                inputPort.GetConnectedPorts(connectedPorts);
+                foreach (IPort connectedPort in connectedPorts)
+                {
+                    // GTK asks whether an existing wire is still valid after a
+                    // graph change. Keep that wire valid; reject only a new,
+                    // competing source.
+                    if (connectedPort != outputPort)
+                        return false;
+                }
+            }
+
+            if (firstPort.GetNode() is CustomCozyNode firstVariableNode &&
+                firstVariableNode.RequiresBlackboardVariablePort(firstPort.Name) &&
+                secondPort.GetNode() is not IVariableNode)
+            {
+                return false;
+            }
+
+            if (secondPort.GetNode() is CustomCozyNode secondVariableNode &&
+                secondVariableNode.RequiresBlackboardVariablePort(secondPort.Name) &&
+                firstPort.GetNode() is not IVariableNode)
+            {
+                return false;
+            }
+
+            if (firstPort.GetNode() is CustomCozyNode firstCustomNode &&
+                firstCustomNode.TryGetTypeParameterPortDefinition(
+                    firstPort.Name,
+                    out _,
+                    out _))
+            {
+                return firstCustomNode.CanConnectTypeParameterPort(firstPort, secondPort);
+            }
+
+            if (secondPort.GetNode() is CustomCozyNode secondCustomNode &&
+                secondCustomNode.TryGetTypeParameterPortDefinition(
+                    secondPort.Name,
+                    out _,
+                    out _))
+            {
+                return secondCustomNode.CanConnectTypeParameterPort(secondPort, firstPort);
+            }
+
+            if (base.IsConnectionAllowed(firstPort, secondPort))
+                return true;
 
             return CozyValueConverter.CanConvert(outputPort.DataType, inputPort.DataType);
         }
@@ -183,46 +234,26 @@ namespace ShaderFactory.CozyNodes.Editor
             }
         }
 
-        /// <summary>
-        /// Set Variable has generic ports so it can support every Blackboard type.
-        /// Validate the two connections here, where Graph Toolkit can show the
-        /// problem directly on the node instead of waiting for Play Mode.
-        /// </summary>
-        private void CheckSetVariableError(INode node, GraphLogger graphLogger)
+        private static void CheckBlackboardVariableInputs(INode node, GraphLogger graphLogger)
         {
-            if (node is not SetVariableNode setVariableNode)
+            if (node is not CustomCozyNode customNode)
                 return;
 
-            IPort variableInput = setVariableNode.GetInputPortByName("Variable");
-            IPort valueInput = setVariableNode.GetInputPortByName("Value");
-            IPort variableSource = variableInput?.FirstConnectedPort;
-            IPort valueSource = valueInput?.FirstConnectedPort;
-
-            if (variableSource == null || variableSource.GetNode() is not IVariableNode variableNode)
+            foreach (IPort inputPort in node.GetInputPorts())
             {
-                graphLogger.LogError(
-                    "Set Variable needs a Blackboard variable connected to Variable.",
-                    setVariableNode);
-                return;
-            }
+                if (!customNode.RequiresBlackboardVariablePort(inputPort.Name))
+                    continue;
 
-            if (valueSource == null || variableNode.Variable == null)
-                return;
+                IPort connectedPort = inputPort.FirstConnectedPort;
+                if (connectedPort != null && connectedPort.GetNode() is IVariableNode)
+                    continue;
 
-            if (valueSource.DataType == null || variableNode.Variable.DataType == null)
-            {
                 graphLogger.LogError(
-                    "Set Variable could not determine the connected value type.",
-                    setVariableNode);
-                return;
-            }
-
-            if (!CozyValueConverter.CanConvert(valueSource.DataType, variableNode.Variable.DataType))
-            {
-                graphLogger.LogError(
-                    $"Set Variable cannot convert {valueSource.DataType.Name} to {variableNode.Variable.DataType.Name} for '{variableNode.Variable.Name}'.",
-                    setVariableNode);
+                    $"{customNode.Title} needs a Blackboard variable connected to " +
+                    $"'{inputPort.DisplayName}'.",
+                    node);
             }
         }
+
     }
 }

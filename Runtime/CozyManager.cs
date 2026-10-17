@@ -76,6 +76,11 @@ namespace ShaderFactory.CozyNodes.Runtime
                 graphRunner.RunOnStart();
         }
 
+        private void Update()
+        {
+            graphRunner?.Update(Time.deltaTime);
+        }
+
         /// <summary>
         /// Gets the game-authored node instance associated with one imported node.
         /// This is internal package plumbing; custom nodes receive their behavior

@@ -7,9 +7,9 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// Result. It uses only the public CozyNode API available to game projects.
     /// </summary>
     [CozyNodeMenu("Utilities/String", "String Combine")]
-    [CozyNodeIcon("Packages/com.shaderfactory.cozynodes/Editor/Icons/CombineStrings.png")]
+    [CozyNodeIcon("Packages/com.shaderfactory.cozynodes/Editor/Icons/StringCombine.png")]
     [CozyNodeWidth(270)]
-    public class CombineStringNode : CozyStringNode
+    public class StringCombineNode : CozyStringNode
     {
         [Option("Input Count", Tooltip = "How many text inputs this node shows.")]
         public int InputCount = 2;

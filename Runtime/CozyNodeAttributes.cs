@@ -334,6 +334,16 @@ namespace ShaderFactory.CozyNodes.Runtime
     }
 
     /// <summary>
+    /// Marks a flow node as an intentional terminal action. Cozy Nodes supplies
+    /// the usual default <c>in</c> port for an Execute override, but does not
+    /// infer a default <c>out</c> port.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, Inherited = true)]
+    public sealed class CozyFlowTerminalAttribute : Attribute
+    {
+    }
+
+    /// <summary>
     /// Marks a CozyNode as an entry point for a graph. Entry nodes only expose
     /// flow outputs; the importer records their connected targets as runtime
     /// entries instead of creating a runtime node for them.
@@ -352,25 +362,4 @@ namespace ShaderFactory.CozyNodes.Runtime
         }
     }
 
-    /// <summary>
-    /// Lets a generated editor adapter replace one pre-release editor node type
-    /// without retaining that old implementation in the package.
-    /// </summary>
-    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
-    public sealed class CozyNodeMovedFromAttribute : Attribute
-    {
-        public string SourceNamespace { get; }
-        public string SourceAssembly { get; }
-        public string SourceClassName { get; }
-
-        public CozyNodeMovedFromAttribute(
-            string sourceNamespace,
-            string sourceAssembly,
-            string sourceClassName)
-        {
-            SourceNamespace = sourceNamespace;
-            SourceAssembly = sourceAssembly;
-            SourceClassName = sourceClassName;
-        }
-    }
 }

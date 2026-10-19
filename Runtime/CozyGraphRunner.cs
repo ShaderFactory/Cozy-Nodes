@@ -32,7 +32,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// <summary>
         /// Validates the graph and builds its lookup table. Starting an entry is
         /// deliberately separate so CozyManager can choose the lifecycle entry
-        /// and game code can later run a named Custom Event entry.
+        /// and game code can later run a named On Event entry.
         /// </summary>
         public bool Initialize(RuntimeCozyGraph graph)
         {
@@ -51,7 +51,7 @@ namespace ShaderFactory.CozyNodes.Runtime
 
         /// <summary>
         /// Runs the graph's automatic On Start entry, when it has one.
-        /// A graph that only contains Custom Events is valid and stays idle.
+        /// A graph that only contains On Event entries is valid and stays idle.
         /// </summary>
         public bool RunOnStart()
         {
@@ -59,14 +59,14 @@ namespace ShaderFactory.CozyNodes.Runtime
         }
 
         /// <summary>
-        /// Starts one named Custom Event entry. This is an external graph start,
-        /// unlike a Wait for Trigger node, which resumes an already-running flow.
+        /// Starts one named On Event entry. This is an external graph start,
+        /// unlike a Wait For Event node, which resumes an already-running flow.
         /// </summary>
         public bool RunCustomEvent(string eventName)
         {
             if (string.IsNullOrWhiteSpace(eventName))
             {
-                Debug.LogWarning("Custom Event needs a name.");
+                Debug.LogWarning("On Event needs a name.");
                 return false;
             }
 
@@ -95,7 +95,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             if (!rootFrame.Graph.TryGetEntry(kind, entryName, out RuntimeCozyGraphEntry entry))
             {
                 if (reportMissingEntry)
-                    Debug.LogWarning($"Custom Event '{entryName}' was not found in this graph.");
+                    Debug.LogWarning($"On Event '{entryName}' was not found in this graph.");
 
                 return false;
             }
@@ -409,9 +409,48 @@ namespace ShaderFactory.CozyNodes.Runtime
                 return false;
             }
 
-            CancelFrame(activeFrame);
+            CozyExecutionFrame childFrame = activeFrame;
+            CozyExecutionFrame parentFrame = suspendedFrames.Peek();
+            if (parentFrame.CurrentNode is not RuntimeCozySubgraphNode subgraphNode)
+            {
+                Debug.LogError("A subgraph returned to a caller that is not a subgraph node.");
+                StopGraph();
+                return false;
+            }
+
+            if (!subgraphNode.TryCollectChildOutputValues(
+                    cozyManager,
+                    childFrame.Variables,
+                    out Dictionary<string, object> outputValues,
+                    out string dataOutputError))
+            {
+                Debug.LogError(dataOutputError);
+                StopGraph();
+                return false;
+            }
+
+            parentFrame.SetSubgraphOutputValues(subgraphNode, outputValues);
+
+            CancelFrame(childFrame);
             ActivateFrame(suspendedFrames.Pop());
             return TryAdvanceFlow(CozyNodeExecutionResult.ContinueWith(result.OutputPortName));
+        }
+
+        internal bool TryGetSubgraphOutputValue(
+            RuntimeCozySubgraphNode subgraphNode,
+            string outputPortName,
+            out object value)
+        {
+            if (activeFrame == null)
+            {
+                value = null;
+                return false;
+            }
+
+            return activeFrame.TryGetSubgraphOutputValue(
+                subgraphNode,
+                outputPortName,
+                out value);
         }
 
         private bool TryExitScope(RuntimeCozyNode scopeNode)

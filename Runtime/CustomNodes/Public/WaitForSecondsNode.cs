@@ -11,13 +11,10 @@ namespace ShaderFactory.CozyNodes.Runtime
         "Control Flow",
         "Wait For Seconds",
         Tooltip = "Pauses this graph flow for the chosen number of scaled game-time seconds.")]
-    [CozyNodeColor(0.114f, 0.122f, 0.141f)]
-    [CozyNodeAccentColor(0.361f, 0.388f, 0.439f)]
-    [CozyNodeHeaderTextColor(1f, 1f, 1f)]
     [CozyNodeIcon("Packages/com.shaderfactory.cozynodes/Editor/Icons/WaitForSeconds.png")]
     [FlowInput]
     [FlowOutput]
-    public sealed class WaitForSecondsNode : CozyNode
+    public sealed class WaitForSecondsNode : CozyControlFlowNode
     {
         [Input("Seconds", Tooltip = "The scaled game-time duration to wait. Zero continues immediately.")]
         public float Seconds = 1f;

@@ -14,7 +14,7 @@ namespace ShaderFactory.CozyNodes.Runtime
 
         /// <summary>
         /// All places where this graph can begin. A graph can have one On Start
-        /// entry and any number of named Custom Event entries.
+        /// entry and any number of named On Event entries.
         /// </summary>
         [SerializeReference] public List<RuntimeCozyGraphEntry> Entries = new();
 
@@ -28,7 +28,7 @@ namespace ShaderFactory.CozyNodes.Runtime
 
         /// <summary>
         /// Finds one imported entry. On Start has no caller-provided name;
-        /// Custom Event entries are identified by their authored event name.
+        /// On Event entries are identified by their authored event name.
         /// </summary>
         public bool TryGetEntry(
             CozyGraphEntryKind kind,

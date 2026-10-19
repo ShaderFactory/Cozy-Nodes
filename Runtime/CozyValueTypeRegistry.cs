@@ -277,20 +277,4 @@ namespace ShaderFactory.CozyNodes.Runtime
         }
     }
 
-    /// <summary>
-    /// Compatibility facade for existing custom Cozy code. New package code uses
-    /// <see cref="CozyValueTypeRegistry"/> directly.
-    /// </summary>
-    public static class CozyValueTypes
-    {
-        public static bool IsSupported(Type valueType)
-        {
-            return CozyValueTypeRegistry.IsSupported(valueType);
-        }
-
-        public static object CloneForRuntime(object value)
-        {
-            return CozyValueTypeRegistry.CloneForRuntime(value);
-        }
-    }
 }

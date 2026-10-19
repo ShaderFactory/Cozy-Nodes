@@ -458,6 +458,7 @@ namespace ShaderFactory.CozyNodes.Runtime
 
         private static void AddFlowPorts(Type nodeType, CozyNodeDefinition definition)
         {
+            bool isTerminal = nodeType.GetCustomAttribute<CozyFlowTerminalAttribute>(true) != null;
             object[] flowInputs =
                 nodeType.GetCustomAttributes(typeof(FlowInputAttribute), true);
             object[] flowOutputs =
@@ -484,7 +485,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             if (definition.FlowInputs.Count == 0)
                 definition.FlowInputs.Add("in");
 
-            if (definition.FlowOutputs.Count == 0)
+            if (definition.FlowOutputs.Count == 0 && !isTerminal)
                 definition.FlowOutputs.Add("out");
         }
 

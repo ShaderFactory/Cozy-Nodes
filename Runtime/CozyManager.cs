@@ -20,7 +20,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         public CozyRuntimeVariables RuntimeVariables { get; private set; }
 
         /// <summary>
-        /// Raised when a graph executes an Invoke Event node. Game code subscribes to
+        /// Raised when a graph executes an Emit Event node. Game code subscribes to
         /// this event to react without Cozy Nodes knowing any game-specific systems.
         /// </summary>
         public event Action<CozyEvent> EventInvoked;
@@ -112,6 +112,28 @@ namespace ShaderFactory.CozyNodes.Runtime
         }
 
         /// <summary>
+        /// Retrieves a local-subgraph value that has returned into the active
+        /// caller frame. RuntimeCozySubgraphNode uses this instead of retaining
+        /// mutable state on the imported graph asset.
+        /// </summary>
+        internal bool TryGetSubgraphOutputValue(
+            RuntimeCozySubgraphNode subgraphNode,
+            string outputPortName,
+            out object value)
+        {
+            if (graphRunner == null)
+            {
+                value = null;
+                return false;
+            }
+
+            return graphRunner.TryGetSubgraphOutputValue(
+                subgraphNode,
+                outputPortName,
+                out value);
+        }
+
+        /// <summary>
         /// Sends a named event to the node currently waiting in this graph.
         /// A UI Button can call this method directly and provide its trigger name.
         /// </summary>
@@ -121,8 +143,8 @@ namespace ShaderFactory.CozyNodes.Runtime
         }
 
         /// <summary>
-        /// Starts the named Custom Event entry authored in this graph. This is a
-        /// graph entry point, not a signal for a Wait for Trigger node.
+        /// Starts the named On Event entry authored in this graph. This is a
+        /// graph entry point, not a signal for a Wait For Event node.
         /// </summary>
         public bool RunCustomEvent(string eventName)
         {

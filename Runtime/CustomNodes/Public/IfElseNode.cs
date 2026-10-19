@@ -8,7 +8,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     [FlowInput]
     [FlowOutput("True")]
     [FlowOutput("False")]
-    public class IfElseNode : CozyNode
+    public class IfElseNode : CozyControlFlowNode
     {
         [Input]
         public bool Condition;

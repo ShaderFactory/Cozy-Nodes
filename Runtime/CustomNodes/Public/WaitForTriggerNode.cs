@@ -4,22 +4,18 @@ namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Pauses the current graph flow until CozyManager receives a matching
-    /// named trigger. Unlike a Custom Event, this resumes an already-running
+    /// named event. Unlike On Event, this resumes an already-running
     /// path instead of starting a new graph entry.
     /// </summary>
     [CozyNodeMenu(
         "Control Flow",
-        "Wait For Trigger",
-        Tooltip = "Pauses this flow until CozyManager.Trigger receives the matching name.")]
-    [CozyNodeColor(0.7882353f, 0.5921568f, 0f)]
-    [CozyNodeAccentColor(0.9764706f, 0.9450980f, 0.8509804f)]
-    [CozyNodeHeaderTextColor(1f, 1f, 1f)]
-    [CozyNodeIcon("Packages/com.shaderfactory.cozynodes/Editor/Icons/WaitForTrigger.png")]
+        "Wait For Event",
+        Tooltip = "Pauses this flow until a matching named event is triggered.")]
     [FlowInput]
     [FlowOutput]
-    public sealed class WaitForTriggerNode : CozyNode, ICozyNodeTriggerListener
+    public sealed class WaitForTriggerNode : CozyEventNode, ICozyNodeTriggerListener
     {
-        [Input("Trigger Name", Tooltip = "The name that must be passed to CozyManager.Trigger.")]
+        [Input("Event Name", Tooltip = "The event name that resumes this waiting flow.")]
         public string TriggerName;
 
         [NonSerialized] private bool receivedTrigger;

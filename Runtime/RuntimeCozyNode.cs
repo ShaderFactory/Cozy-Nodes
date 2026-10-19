@@ -184,8 +184,9 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// </summary>
         public virtual CozyNodeExecutionResult Run()
         {
-            // A node with no action is treated as an end point. This also makes EndNode
-            // quiet until it receives its own specialized runtime behavior.
+            // A node with no action is treated as an end point. Explicit authored
+            // termination is provided by Stop Graph; this default keeps malformed
+            // or value-only flow endpoints safe.
             return CozyNodeExecutionResult.Finish();
         }
 

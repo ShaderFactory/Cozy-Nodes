@@ -9,7 +9,7 @@ namespace ShaderFactory.CozyNodes.Editor
 {
     // Increment this version whenever imported runtime data changes. Unity will then
     // rebuild existing .cozygraph assets instead of running stale runtime data.
-    [ScriptedImporter(36, CozyGraph.AssetExtension)]
+    [ScriptedImporter(38, CozyGraph.AssetExtension)]
     public class CozyGraphImporter : ScriptedImporter
     {
         public override void OnImportAsset(AssetImportContext ctx)
@@ -220,14 +220,6 @@ namespace ShaderFactory.CozyNodes.Editor
                 return;
             }
 
-            if (description.DataOutputs.Count > 0)
-            {
-                Debug.LogError(
-                    $"Subgraph '{editorNode.Title}' exposes data outputs. " +
-                    "This Cozy Nodes phase supports local subgraph data inputs only.");
-                return;
-            }
-
             RuntimeCozyGraph childRuntimeGraph = importContext.GetOrImportSubgraph(
                 description.Subgraph);
             if (childRuntimeGraph == null)
@@ -257,6 +249,39 @@ namespace ShaderFactory.CozyNodes.Editor
                     ChildVariableID = dataInput.Variable.ID.ToString(),
                     ValueTypeName = valueType.AssemblyQualifiedName
                 });
+            }
+
+            foreach (CozyGraphToolkitSubgraphInterface.DataPort dataOutput in description.DataOutputs)
+            {
+                Type valueType = dataOutput.Variable.DataType;
+                runtimeNode.RegisterPort(
+                    dataOutput.ParentPort.Name,
+                    null,
+                    true,
+                    valueType);
+                RuntimeCozySubgraphDataOutput runtimeDataOutput =
+                    new RuntimeCozySubgraphDataOutput
+                {
+                    ParentPortName = dataOutput.ParentPort.Name,
+                    ChildVariableID = dataOutput.Variable.ID.ToString(),
+                    ValueTypeName = valueType.AssemblyQualifiedName
+                };
+
+                if (CozyGraphToolkitSubgraphInterface.TryGetDataOutputSource(
+                        description.Subgraph,
+                        dataOutput.Variable,
+                        out IPort childOutputSource))
+                {
+                    runtimeDataOutput.HasConnectedSource = true;
+                    runtimeDataOutput.Source.SetValue(
+                        CozyPortValueImporter.GetPortValue(
+                            childOutputSource,
+                            importContext.GetNodeIDs(description.Subgraph)),
+                        valueType);
+                    runtimeDataOutput.Source.ValueTypeName = valueType.AssemblyQualifiedName;
+                }
+
+                runtimeNode.DataOutputs.Add(runtimeDataOutput);
             }
 
             foreach (CozyGraphToolkitSubgraphInterface.FlowPort flowInput in description.FlowInputs)
@@ -347,7 +372,7 @@ namespace ShaderFactory.CozyNodes.Editor
                 string.IsNullOrWhiteSpace(entryName))
             {
                 Debug.LogError(
-                    $"Custom Event on '{definition.Title}' needs an Event Name.");
+                    $"On Event on '{definition.Title}' needs an Event Name.");
                 return true;
             }
 

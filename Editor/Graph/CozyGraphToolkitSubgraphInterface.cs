@@ -337,5 +337,41 @@ namespace ShaderFactory.CozyNodes.Editor
 
             return false;
         }
+
+        /// <summary>
+        /// Finds the incoming data wire for a child Blackboard output. Unlike a
+        /// flow gateway, this endpoint does not execute anything; it simply
+        /// exposes the value that feeds it when the subgraph returns.
+        /// </summary>
+        internal static bool TryGetDataOutputSource(
+            Graph subgraph,
+            IVariable variable,
+            out IPort childInputPort)
+        {
+            childInputPort = null;
+            if (subgraph == null || variable == null)
+                return false;
+
+            foreach (INode node in subgraph.GetNodes())
+            {
+                if (node is not IVariableNode variableNode ||
+                    variableNode.Variable == null ||
+                    variableNode.Variable.ID.ToString() != variable.ID.ToString())
+                {
+                    continue;
+                }
+
+                foreach (IPort inputPort in node.GetInputPorts())
+                {
+                    if (!inputPort.IsConnected)
+                        continue;
+
+                    childInputPort = inputPort;
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 }

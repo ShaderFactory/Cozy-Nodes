@@ -190,7 +190,6 @@ namespace ShaderFactory.CozyNodes.Editor
             source.AppendLine("using System;");
             source.AppendLine("using ShaderFactory.CozyNodes.Editor;");
             source.AppendLine("using Unity.GraphToolkit.Editor;");
-            source.AppendLine("using UnityEngine.Scripting.APIUpdating;");
             source.AppendLine();
             source.AppendLine("namespace " + GeneratedNamespace);
             source.AppendLine("{");
@@ -217,15 +216,6 @@ namespace ShaderFactory.CozyNodes.Editor
             // requires this public attribute to include cross-assembly nodes in
             // CozyGraph's native right-click item library.
             source.AppendLine("    [UseWithGraph(typeof(CozyGraph))]");
-            foreach (CozyNodeMovedFromAttribute movedFrom in nodeType.GetCustomAttributes(
-                         typeof(CozyNodeMovedFromAttribute),
-                         true))
-            {
-                source.AppendLine(
-                    "    [MovedFrom(true, \"" + EscapeString(movedFrom.SourceNamespace) +
-                    "\", \"" + EscapeString(movedFrom.SourceAssembly) +
-                    "\", \"" + EscapeString(movedFrom.SourceClassName) + "\")]" );
-            }
             string iconPath = string.IsNullOrWhiteSpace(definition.IconAssetPath)
                 ? "null"
                 : "\"" + EscapeString(definition.IconAssetPath) + "\"";

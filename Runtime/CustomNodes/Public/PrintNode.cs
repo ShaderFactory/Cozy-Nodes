@@ -16,7 +16,11 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// Writes a text value to the Unity Console and continues execution.
     /// </summary>
     [CozyNodeMenu("Debug", "Print")]
+    [CozyNodeIcon("Packages/com.shaderfactory.cozynodes/Editor/Icons/Print.png")]
     [CozyNodeWidth(270)]
+    [CozyNodeColor(0.114f * 1.5f, 0.122f * 1.5f, 0.141f * 1.5f)]
+    [CozyNodeAccentColor(0.361f, 0.388f, 0.439f)]
+    [CozyNodeHeaderTextColor(1f, 1f, 1f)]
     [FlowInput]
     [FlowOutput]
     public class PrintNode : CozyNode

@@ -5,10 +5,6 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// Variable Type in the node UI; both inputs then use that concrete type.
     /// </summary>
     [CozyNodeMenu("Utilities/Variables", "Set Variable")]
-    [CozyNodeMovedFrom(
-        "ShaderFactory.CozyNodes.Editor",
-        "shaderfactory.cozynodes.editor",
-        "SetVariableNode")]
     [CozyTypeParameter("T", "Variable Type", AllowArrayTypes = true)]
     [FlowInput]
     [FlowOutput]

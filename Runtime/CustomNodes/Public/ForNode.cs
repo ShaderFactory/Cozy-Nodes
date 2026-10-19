@@ -5,15 +5,12 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// End, advancing by Step. End is exclusive, matching a normal C# for loop.
     /// </summary>
     [CozyNodeMenu("Control Flow", "For Loop")]
-    [CozyNodeColor(0.7f, 0.7f, 0.7f)]
-    [CozyNodeAccentColor(0.737f, 0.706f, 0.624f)]
-    [CozyNodeHeaderTextColor(0f, 0f, 0f)]
     [CozyNodeIcon("Packages/com.shaderfactory.cozynodes/Editor/Icons/ForLoop.png")]
     [FlowInput]
     [FlowInput("Break")]
     [FlowOutput("Body")]
     [FlowOutput("Exit")]
-    public class ForNode : CozyNode
+    public class ForNode : CozyControlFlowNode
     {
         [Input("Start", Tooltip = "The first Index to run.")]
         public int Start;

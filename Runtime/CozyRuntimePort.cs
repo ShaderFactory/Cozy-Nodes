@@ -18,6 +18,15 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// </summary>
         public string ValueTypeName;
 
+        /// <summary>
+        /// Assembly-qualified type used to serialize a local value. This can differ
+        /// from <see cref="ValueTypeName"/> when an inline constant feeds a port
+        /// through an implicit conversion, such as bool to string or int to float.
+        /// The runtime restores this source value first, then converts it to the
+        /// port's expected type during evaluation.
+        /// </summary>
+        public string StoredValueTypeName;
+
         private RuntimeCozyNode node;
 
         /// <summary>
@@ -56,7 +65,9 @@ namespace ShaderFactory.CozyNodes.Runtime
             {
                 type = PortType.Value;
                 LocalValue ??= new CozySerializedValue();
-                LocalValue.SetValue(value, declaredType);
+                Type storedValueType = value?.GetType() ?? declaredType;
+                StoredValueTypeName = storedValueType?.AssemblyQualifiedName;
+                LocalValue.SetValue(value, storedValueType);
                 ImportMessage = value is Array ? "Array" : "Local Value";
             }
         }
@@ -69,7 +80,10 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// <summary> Reads the value if the port is not connected, evaluates the value if so. </summary>
         public object GetValue()
         {
-            return LocalValue?.GetValue(GetValueType());
+            Type storedValueType = string.IsNullOrEmpty(StoredValueTypeName)
+                ? null
+                : Type.GetType(StoredValueTypeName);
+            return LocalValue?.GetValue(storedValueType);
         }
 
         public Type GetValueType()

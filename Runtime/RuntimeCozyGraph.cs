@@ -52,5 +52,35 @@ namespace ShaderFactory.CozyNodes.Runtime
             return false;
         }
 
+        /// <summary>
+        /// Finds a top-level runtime node or a block owned by an imported
+        /// context. Blocks are intentionally not listed in AllNodes because the
+        /// graph runner must enter them through their context.
+        /// </summary>
+        public bool TryGetNode(string nodeID, out RuntimeCozyNode node)
+        {
+            foreach (RuntimeCozyNode candidate in AllNodes)
+            {
+                if (candidate == null)
+                    continue;
+
+                if (candidate.NodeID == nodeID)
+                {
+                    node = candidate;
+                    return true;
+                }
+
+                if (candidate is RuntimeCozyContextNode context &&
+                    context.TryGetBlock(nodeID, out RuntimeCozyBlock block))
+                {
+                    node = block;
+                    return true;
+                }
+            }
+
+            node = null;
+            return false;
+        }
+
     }
 }

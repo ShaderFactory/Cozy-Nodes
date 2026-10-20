@@ -16,11 +16,12 @@ namespace ShaderFactory.CozyNodes.Runtime
             new Dictionary<Type, CozyNodeDefinition>();
 
         /// <summary>
-        /// Gets the reflection definition for a concrete CozyNode type.
+        /// Gets the reflection definition for a concrete game-authored Cozy
+        /// node, context, or block type.
         /// </summary>
         public static CozyNodeDefinition GetDefinition(Type nodeType)
         {
-            if (nodeType == null || !typeof(CozyNode).IsAssignableFrom(nodeType))
+            if (!IsAuthoredElementType(nodeType))
                 return null;
 
             if (definitionsByType.TryGetValue(nodeType, out CozyNodeDefinition definition))
@@ -47,6 +48,26 @@ namespace ShaderFactory.CozyNodes.Runtime
         }
 
         /// <summary>
+        /// Resolves a game-authored CozyContext type stored by a generated GTK
+        /// context adapter.
+        /// </summary>
+        public static Type FindContextType(string assemblyQualifiedTypeName)
+        {
+            Type contextType = FindAuthoredElementType(assemblyQualifiedTypeName);
+            return typeof(CozyContext).IsAssignableFrom(contextType) ? contextType : null;
+        }
+
+        /// <summary>
+        /// Resolves a game-authored CozyBlock type stored by a generated GTK
+        /// block adapter.
+        /// </summary>
+        public static Type FindBlockType(string assemblyQualifiedTypeName)
+        {
+            Type blockType = FindAuthoredElementType(assemblyQualifiedTypeName);
+            return typeof(CozyBlock).IsAssignableFrom(blockType) ? blockType : null;
+        }
+
+        /// <summary>
         /// Creates a custom node instance. The constructor must be public and take
         /// no parameters so the graph can create one instance per CozyManager.
         /// </summary>
@@ -58,18 +79,36 @@ namespace ShaderFactory.CozyNodes.Runtime
                 return null;
             }
 
-            try
+            return CreateAuthoredElementInstance(nodeType) as CozyNode;
+        }
+
+        /// <summary>
+        /// Creates one game-authored context instance for a running CozyManager.
+        /// Context instances are kept by the manager, never by the graph asset.
+        /// </summary>
+        public static CozyContext CreateContextInstance(Type contextType)
+        {
+            if (contextType == null || contextType.IsAbstract ||
+                !typeof(CozyContext).IsAssignableFrom(contextType))
             {
-                return Activator.CreateInstance(nodeType) as CozyNode;
-            }
-            catch (Exception exception)
-            {
-                UnityEngine.Debug.LogError(
-                    $"Could not create Cozy node '{nodeType.FullName}'. " +
-                    "Custom Cozy nodes need a public parameterless constructor.\n" +
-                    exception.Message);
                 return null;
             }
+
+            return CreateAuthoredElementInstance(contextType) as CozyContext;
+        }
+
+        /// <summary>
+        /// Creates one game-authored block instance for a running CozyManager.
+        /// </summary>
+        public static CozyBlock CreateBlockInstance(Type blockType)
+        {
+            if (blockType == null || blockType.IsAbstract ||
+                !typeof(CozyBlock).IsAssignableFrom(blockType))
+            {
+                return null;
+            }
+
+            return CreateAuthoredElementInstance(blockType) as CozyBlock;
         }
 
         private static CozyNodeDefinition CreateDefinition(Type nodeType)
@@ -78,14 +117,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             definition.NodeType = nodeType;
             definition.TypeName = nodeType.AssemblyQualifiedName;
 
-            CozyNodeMenuAttribute menuAttribute =
-                nodeType.GetCustomAttribute<CozyNodeMenuAttribute>(true);
-
-            definition.Category = menuAttribute?.Category;
-            definition.Title = string.IsNullOrWhiteSpace(menuAttribute?.Title)
-                ? HumanizeName(nodeType.Name)
-                : menuAttribute.Title;
-            definition.Tooltip = menuAttribute?.Tooltip;
+            ConfigureMenuMetadata(nodeType, definition);
 
             CozyNodeWidthAttribute nodeWidthAttribute =
                 nodeType.GetCustomAttribute<CozyNodeWidthAttribute>(true);
@@ -133,8 +165,9 @@ namespace ShaderFactory.CozyNodes.Runtime
                     headerTextColorAttribute.Alpha);
             }
 
-            CozyGraphEntryAttribute entryAttribute =
-                nodeType.GetCustomAttribute<CozyGraphEntryAttribute>(true);
+            CozyGraphEntryAttribute entryAttribute = typeof(CozyNode).IsAssignableFrom(nodeType)
+                ? nodeType.GetCustomAttribute<CozyGraphEntryAttribute>(true)
+                : null;
             if (entryAttribute != null)
             {
                 definition.Entry = new CozyGraphEntryDefinition();
@@ -174,7 +207,7 @@ namespace ShaderFactory.CozyNodes.Runtime
 
             FieldInfo[] fields = nodeType.GetFields(
                 BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            CozyNode defaultInstance = CreateNodeInstance(nodeType);
+            object defaultInstance = CreateAuthoredElementInstance(nodeType);
 
             foreach (FieldInfo field in fields)
             {
@@ -266,11 +299,81 @@ namespace ShaderFactory.CozyNodes.Runtime
             return definition;
         }
 
+        private static bool IsAuthoredElementType(Type elementType)
+        {
+            return elementType != null && typeof(CozyGraphElement).IsAssignableFrom(elementType);
+        }
+
+        private static Type FindAuthoredElementType(string assemblyQualifiedTypeName)
+        {
+            if (string.IsNullOrWhiteSpace(assemblyQualifiedTypeName))
+                return null;
+
+            Type elementType = Type.GetType(assemblyQualifiedTypeName);
+            return IsAuthoredElementType(elementType) ? elementType : null;
+        }
+
+        private static object CreateAuthoredElementInstance(Type elementType)
+        {
+            if (elementType == null || elementType.IsAbstract ||
+                !IsAuthoredElementType(elementType))
+            {
+                return null;
+            }
+
+            try
+            {
+                return Activator.CreateInstance(elementType);
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogError(
+                    $"Could not create Cozy graph element '{elementType.FullName}'. " +
+                    "Custom Cozy graph elements need a public parameterless constructor.\n" +
+                    exception.Message);
+                return null;
+            }
+        }
+
+        private static void ConfigureMenuMetadata(Type elementType, CozyNodeDefinition definition)
+        {
+            if (typeof(CozyContext).IsAssignableFrom(elementType))
+            {
+                CozyContextMenuAttribute contextMenu =
+                    elementType.GetCustomAttribute<CozyContextMenuAttribute>(true);
+                definition.Category = contextMenu?.Category;
+                definition.Title = string.IsNullOrWhiteSpace(contextMenu?.Title)
+                    ? HumanizeName(elementType.Name)
+                    : contextMenu.Title;
+                definition.Tooltip = contextMenu?.Tooltip;
+                return;
+            }
+
+            if (typeof(CozyBlock).IsAssignableFrom(elementType))
+            {
+                CozyBlockMenuAttribute blockMenu =
+                    elementType.GetCustomAttribute<CozyBlockMenuAttribute>(true);
+                definition.Title = string.IsNullOrWhiteSpace(blockMenu?.Title)
+                    ? HumanizeName(elementType.Name)
+                    : blockMenu.Title;
+                definition.Tooltip = blockMenu?.Tooltip;
+                return;
+            }
+
+            CozyNodeMenuAttribute nodeMenu =
+                elementType.GetCustomAttribute<CozyNodeMenuAttribute>(true);
+            definition.Category = nodeMenu?.Category;
+            definition.Title = string.IsNullOrWhiteSpace(nodeMenu?.Title)
+                ? HumanizeName(elementType.Name)
+                : nodeMenu.Title;
+            definition.Tooltip = nodeMenu?.Tooltip;
+        }
+
         private static void AddOptionDefinition(
             CozyNodeDefinition definition,
             FieldInfo field,
             OptionAttribute optionAttribute,
-            CozyNode defaultInstance)
+            object defaultInstance)
         {
             if (!IsSupportedOptionType(field.FieldType))
             {
@@ -299,7 +402,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             FieldInfo field,
             InputListAttribute inputListAttribute,
             CozyTypeParameterPortAttribute typeParameterPortAttribute,
-            CozyNode defaultInstance)
+            object defaultInstance)
         {
             if (!field.FieldType.IsArray)
             {
@@ -476,10 +579,10 @@ namespace ShaderFactory.CozyNodes.Runtime
                     definition.FlowOutputs.Add(flowOutput.PortName);
             }
 
-            // A node that overrides Execute is normally a simple action node. Give
+            // A runtime node that overrides Execute is normally a simple action node. Give
             // it the familiar in/out pair without making every author repeat the
             // same two attributes. Branches can declare their named outputs above.
-            if (!OverridesExecute(nodeType))
+            if (!typeof(CozyNode).IsAssignableFrom(nodeType) || !OverridesExecute(nodeType))
                 return;
 
             if (definition.FlowInputs.Count == 0)

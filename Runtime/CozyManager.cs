@@ -47,6 +47,14 @@ namespace ShaderFactory.CozyNodes.Runtime
         private readonly Dictionary<RuntimeCozyNode, CozyNode> customNodeInstances =
             new Dictionary<RuntimeCozyNode, CozyNode>();
 
+        // Contexts and blocks follow the same ownership rule as normal custom
+        // nodes: their temporary state belongs to one running Manager, never to
+        // the imported graph asset shared by scenes and Managers.
+        private readonly Dictionary<RuntimeCozyContextNode, CozyContext> contextInstances =
+            new Dictionary<RuntimeCozyContextNode, CozyContext>();
+        private readonly Dictionary<RuntimeCozyBlock, CozyBlock> blockInstances =
+            new Dictionary<RuntimeCozyBlock, CozyBlock>();
+
         // Fast Enter Play Mode can preserve static event subscribers. Each Play
         // session starts with a clean observer list; Editor tooling subscribes
         // again before the first scene loads.
@@ -72,6 +80,8 @@ namespace ShaderFactory.CozyNodes.Runtime
         {
             RuntimeVariables = new CozyRuntimeVariables(RuntimeGraph?.VariableDefinitions);
             customNodeInstances.Clear();
+            contextInstances.Clear();
+            blockInstances.Clear();
             if (graphRunner.Initialize(RuntimeGraph))
                 graphRunner.RunOnStart();
         }
@@ -99,6 +109,38 @@ namespace ShaderFactory.CozyNodes.Runtime
                 customNodeInstances.Add(runtimeNode, newNode);
 
             return newNode;
+        }
+
+        internal CozyContext GetOrCreateContext(
+            RuntimeCozyContextNode runtimeContext,
+            Type contextType)
+        {
+            if (runtimeContext == null || contextType == null)
+                return null;
+
+            if (contextInstances.TryGetValue(runtimeContext, out CozyContext existingContext))
+                return existingContext;
+
+            CozyContext newContext = CozyNodeReflection.CreateContextInstance(contextType);
+            if (newContext != null)
+                contextInstances.Add(runtimeContext, newContext);
+
+            return newContext;
+        }
+
+        internal CozyBlock GetOrCreateBlock(RuntimeCozyBlock runtimeBlock, Type blockType)
+        {
+            if (runtimeBlock == null || blockType == null)
+                return null;
+
+            if (blockInstances.TryGetValue(runtimeBlock, out CozyBlock existingBlock))
+                return existingBlock;
+
+            CozyBlock newBlock = CozyNodeReflection.CreateBlockInstance(blockType);
+            if (newBlock != null)
+                blockInstances.Add(runtimeBlock, newBlock);
+
+            return newBlock;
         }
 
         /// <summary>

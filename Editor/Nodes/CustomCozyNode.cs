@@ -21,8 +21,6 @@ namespace ShaderFactory.CozyNodes.Editor
         [NonSerialized] private string definedInputListLayout;
         [NonSerialized] private string definedTypeParameterLayout;
 
-        private static readonly MethodInfo TryGetOptionValueMethod = FindTryGetOptionValueMethod();
-
         public string CustomNodeTypeName => customNodeTypeName;
 
         /// <summary>
@@ -103,8 +101,10 @@ namespace ShaderFactory.CozyNodes.Editor
             runtimeNode.NodeID = nodeID;
             runtimeNode.NodeType = nodeType;
             runtimeNode.Graph = graph;
-            runtimeNode.CustomNodeTypeName = customNodeTypeName;
-            CopyOptionsToRuntimeNode(runtimeNode);
+            runtimeNode.AuthoredTypeName = customNodeTypeName;
+            CozyNodeDefinition definition = GetDefinition();
+            runtimeNode.DisplayName = definition?.Title;
+            CozyReflectedElementUi.CopyOptions(this, definition, runtimeNode);
             return runtimeNode;
         }
 
@@ -231,7 +231,7 @@ namespace ShaderFactory.CozyNodes.Editor
             if (optionDefinition == null)
                 return null;
 
-            return GetOptionValue(
+            return CozyReflectedElementUi.GetOptionValue(
                 GetNodeOptionByName(optionName),
                 optionDefinition);
         }
@@ -439,7 +439,14 @@ namespace ShaderFactory.CozyNodes.Editor
                     otherPort.DataType);
             }
 
-            return otherPort.DataType == typeParameterPortType;
+            // A selected generic input is still a normal destination value.
+            // Apply Cozy's same explicit conversion policy here so, for example,
+            // an int may feed a Float Set Variable node just as it may feed any
+            // other float input. Arrays remain exact because the converter does
+            // not define element-wise conversions.
+            return CozyValueConverter.CanConvert(
+                otherPort.DataType,
+                typeParameterPortType);
         }
 
         internal bool RequiresBlackboardVariablePort(string portName)
@@ -533,55 +540,6 @@ namespace ShaderFactory.CozyNodes.Editor
                         $"{removedConnectionCount} connected input(s).");
                 }
             }
-        }
-
-        private void CopyOptionsToRuntimeNode(ReflectedCozyRuntimeNode runtimeNode)
-        {
-            CozyNodeDefinition definition = GetDefinition();
-            if (definition == null)
-                return;
-
-            foreach (CozyOptionDefinition optionDefinition in definition.Options)
-            {
-                INodeOption graphToolkitOption = GetNodeOptionByName(optionDefinition.Name);
-                object optionValue = GetOptionValue(graphToolkitOption, optionDefinition);
-                runtimeNode.RegisterOption(
-                    optionDefinition.Name,
-                    optionValue,
-                    optionDefinition.ValueType);
-            }
-        }
-
-        private static MethodInfo FindTryGetOptionValueMethod()
-        {
-            foreach (MethodInfo method in typeof(INodeOption).GetMethods())
-            {
-                if (method.Name == nameof(INodeOption.TryGetValue) &&
-                    method.IsGenericMethodDefinition)
-                {
-                    return method;
-                }
-            }
-
-            return null;
-        }
-
-        private static object GetOptionValue(
-            INodeOption graphToolkitOption,
-            CozyOptionDefinition optionDefinition)
-        {
-            if (graphToolkitOption == null || TryGetOptionValueMethod == null)
-                return optionDefinition.DefaultValue;
-
-            object fallbackValue = optionDefinition.DefaultValue;
-            if (fallbackValue == null && optionDefinition.ValueType.IsValueType)
-                fallbackValue = Activator.CreateInstance(optionDefinition.ValueType);
-
-            MethodInfo typedGetValue = TryGetOptionValueMethod.MakeGenericMethod(
-                optionDefinition.ValueType);
-            object[] arguments = { fallbackValue };
-            bool wasRead = (bool)typedGetValue.Invoke(graphToolkitOption, arguments);
-            return wasRead ? arguments[0] : optionDefinition.DefaultValue;
         }
 
         private void AddInputPort(IPortDefinitionContext context, CozyPortDefinition definition)

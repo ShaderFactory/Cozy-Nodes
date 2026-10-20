@@ -8,7 +8,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// The class stays in the game/runtime assembly and never needs to reference
     /// UnityEditor or Graph Toolkit's editor-only API.
     /// </summary>
-    public abstract class CozyNode
+    public abstract class CozyNode : CozyGraphElement
     {
         /// <summary>
         /// Calculates a requested value output. Value nodes override this method

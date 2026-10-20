@@ -70,11 +70,15 @@ namespace ShaderFactory.CozyNodes.Editor
         private static void GenerateAdapters()
         {
             List<Type> nodeTypes = FindSupportedNodeTypes();
-            string generatedSource = BuildSource(nodeTypes);
+            List<Type> contextTypes = FindSupportedContextTypes();
+            List<Type> blockTypes = FindSupportedBlockTypes(contextTypes);
+            string generatedSource = BuildSource(nodeTypes, contextTypes, blockTypes);
             string generatedFilePath = GetGeneratedFilePath();
 
             Directory.CreateDirectory(Path.GetDirectoryName(generatedFilePath));
-            GenerateStyles(nodeTypes);
+            List<Type> styledTypes = new List<Type>(nodeTypes);
+            styledTypes.AddRange(contextTypes);
+            GenerateStyles(styledTypes);
 
             if (File.Exists(generatedFilePath) &&
                 File.ReadAllText(generatedFilePath) == generatedSource)
@@ -133,25 +137,75 @@ namespace ShaderFactory.CozyNodes.Editor
 
         private static List<Type> FindSupportedNodeTypes()
         {
-            List<Type> nodeTypes = new List<Type>();
+            return FindSupportedTypes<CozyNode>();
+        }
 
-            foreach (Type nodeType in TypeCache.GetTypesDerivedFrom<CozyNode>())
+        private static List<Type> FindSupportedContextTypes()
+        {
+            return FindSupportedTypes<CozyContext>();
+        }
+
+        private static List<Type> FindSupportedBlockTypes(List<Type> supportedContextTypes)
+        {
+            List<Type> blockTypes = new List<Type>();
+
+            foreach (Type blockType in TypeCache.GetTypesDerivedFrom<CozyBlock>())
             {
-                if (!IsSupportedNodeType(nodeType))
+                if (!IsSupportedAuthoredType(blockType))
                     continue;
 
-                nodeTypes.Add(nodeType);
+                if (!HasSupportedContext(blockType, supportedContextTypes))
+                {
+                    Debug.LogWarning(
+                        $"Cozy Nodes cannot add block '{blockType.FullName}' because it needs " +
+                        "at least one [CozyBlockFor(typeof(YourContext))] declaration that " +
+                        "references a public CozyContext.");
+                    continue;
+                }
+
+                blockTypes.Add(blockType);
             }
 
-            nodeTypes.Sort((firstType, secondType) => string.Compare(
+            SortTypes(blockTypes);
+            return blockTypes;
+        }
+
+        private static List<Type> FindSupportedTypes<TBaseType>()
+            where TBaseType : class
+        {
+            List<Type> types = new List<Type>();
+
+            foreach (Type type in TypeCache.GetTypesDerivedFrom<TBaseType>())
+            {
+                if (IsSupportedAuthoredType(type))
+                    types.Add(type);
+            }
+
+            SortTypes(types);
+            return types;
+        }
+
+        private static void SortTypes(List<Type> types)
+        {
+            types.Sort((firstType, secondType) => string.Compare(
                 firstType.AssemblyQualifiedName,
                 secondType.AssemblyQualifiedName,
                 StringComparison.Ordinal));
-
-            return nodeTypes;
         }
 
-        private static bool IsSupportedNodeType(Type nodeType)
+        private static bool HasSupportedContext(Type blockType, List<Type> supportedContextTypes)
+        {
+            foreach (CozyBlockForAttribute blockFor in
+                     blockType.GetCustomAttributes(typeof(CozyBlockForAttribute), false))
+            {
+                if (blockFor.ContextType != null && supportedContextTypes.Contains(blockFor.ContextType))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsSupportedAuthoredType(Type nodeType)
         {
             if (nodeType == null || nodeType.IsAbstract || nodeType.IsGenericTypeDefinition ||
                 nodeType.ContainsGenericParameters)
@@ -164,23 +218,26 @@ namespace ShaderFactory.CozyNodes.Editor
             if (!nodeType.IsVisible)
             {
                 Debug.LogWarning(
-                    $"Cozy Nodes cannot add '{nodeType.FullName}' to the native " +
-                    "node menu because the class is not public.");
+                    $"Cozy Nodes cannot add '{nodeType.FullName}' to its authoring " +
+                    "library because the class is not public.");
                 return false;
             }
 
             if (nodeType.GetConstructor(Type.EmptyTypes) == null)
             {
                 Debug.LogWarning(
-                    $"Cozy Nodes cannot add '{nodeType.FullName}' to the native " +
-                    "node menu because it needs a public parameterless constructor.");
+                    $"Cozy Nodes cannot add '{nodeType.FullName}' to its authoring " +
+                    "library because it needs a public parameterless constructor.");
                 return false;
             }
 
             return true;
         }
 
-        private static string BuildSource(List<Type> nodeTypes)
+        private static string BuildSource(
+            List<Type> nodeTypes,
+            List<Type> contextTypes,
+            List<Type> blockTypes)
         {
             StringBuilder source = new StringBuilder();
             source.AppendLine("// <auto-generated>");
@@ -193,6 +250,12 @@ namespace ShaderFactory.CozyNodes.Editor
             source.AppendLine();
             source.AppendLine("namespace " + GeneratedNamespace);
             source.AppendLine("{");
+
+            foreach (Type contextType in contextTypes)
+                AppendContextAdapter(source, contextType);
+
+            foreach (Type blockType in blockTypes)
+                AppendBlockAdapter(source, blockType, contextTypes);
 
             foreach (Type nodeType in nodeTypes)
                 AppendAdapter(source, nodeType);
@@ -232,6 +295,85 @@ namespace ShaderFactory.CozyNodes.Editor
             source.AppendLine("        protected override Type GetCustomNodeType()");
             source.AppendLine("        {");
             source.AppendLine("            return typeof(" + GetSourceTypeName(nodeType) + ");");
+            source.AppendLine("        }");
+            source.AppendLine("    }");
+            source.AppendLine();
+        }
+
+        private static void AppendContextAdapter(StringBuilder source, Type contextType)
+        {
+            CozyNodeDefinition definition = CozyNodeReflection.GetDefinition(contextType);
+            string category = "Cozy Nodes/Contexts/" +
+                              (string.IsNullOrWhiteSpace(definition.Category)
+                                  ? "Game Contexts"
+                                  : definition.Category);
+            string className = "CozyContextAdapter_" + GetStableIdentifier(contextType);
+            string iconPath = string.IsNullOrWhiteSpace(definition.IconAssetPath)
+                ? "null"
+                : "\"" + EscapeString(definition.IconAssetPath) + "\"";
+            string nodeAttribute =
+                "    [Node(\"" + EscapeString(category) + "\", " + iconPath + ", \"" +
+                EscapeString(definition.Title) + "\"";
+
+            if (HasPresentationStyle(definition))
+                nodeAttribute += ", \"" + EscapeString(GetGeneratedStyleAssetPath(contextType)) + "\"";
+
+            source.AppendLine("    [Serializable]");
+            source.AppendLine("    [UseWithGraph(typeof(CozyGraph))]");
+            source.AppendLine(nodeAttribute + ")]");
+            source.AppendLine("    public sealed class " + className + " : CustomCozyContext");
+            source.AppendLine("    {");
+            source.AppendLine("        protected override Type GetCustomContextType()");
+            source.AppendLine("        {");
+            source.AppendLine("            return typeof(" + GetSourceTypeName(contextType) + ");");
+            source.AppendLine("        }");
+            source.AppendLine("    }");
+            source.AppendLine();
+        }
+
+        private static void AppendBlockAdapter(
+            StringBuilder source,
+            Type blockType,
+            List<Type> supportedContextTypes)
+        {
+            CozyNodeDefinition definition = CozyNodeReflection.GetDefinition(blockType);
+            List<Type> allowedContextTypes = new List<Type>();
+            foreach (CozyBlockForAttribute blockFor in
+                     blockType.GetCustomAttributes(typeof(CozyBlockForAttribute), false))
+            {
+                if (blockFor.ContextType != null &&
+                    supportedContextTypes.Contains(blockFor.ContextType) &&
+                    !allowedContextTypes.Contains(blockFor.ContextType))
+                {
+                    allowedContextTypes.Add(blockFor.ContextType);
+                }
+            }
+
+            string className = "CozyBlockAdapter_" + GetStableIdentifier(blockType);
+            string iconPath = string.IsNullOrWhiteSpace(definition.IconAssetPath)
+                ? "null"
+                : "\"" + EscapeString(definition.IconAssetPath) + "\"";
+            StringBuilder contexts = new StringBuilder();
+            for (int index = 0; index < allowedContextTypes.Count; index++)
+            {
+                if (index > 0)
+                    contexts.Append(", ");
+
+                contexts.Append("typeof(CozyContextAdapter_");
+                contexts.Append(GetStableIdentifier(allowedContextTypes[index]));
+                contexts.Append(")");
+            }
+
+            source.AppendLine("    [Serializable]");
+            source.AppendLine("    [UseWithContext(" + contexts + ")]");
+            source.AppendLine(
+                "    [Node(\"Blocks\", " + iconPath + ", \"" +
+                EscapeString(definition.Title) + "\")]");
+            source.AppendLine("    public sealed class " + className + " : CustomCozyBlock");
+            source.AppendLine("    {");
+            source.AppendLine("        protected override Type GetCustomBlockType()");
+            source.AppendLine("        {");
+            source.AppendLine("            return typeof(" + GetSourceTypeName(blockType) + ");");
             source.AppendLine("        }");
             source.AppendLine("    }");
             source.AppendLine();

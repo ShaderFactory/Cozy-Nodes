@@ -10,21 +10,8 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// resolver and execution contract.
     /// </summary>
     [Serializable]
-    public class ReflectedCozyRuntimeNode : RuntimeCozyNode, ICozyTriggerListener
+    public class ReflectedCozyRuntimeNode : RuntimeCozyAuthoredElement, ICozyTriggerListener
     {
-        /// <summary>
-        /// Assembly-qualified type name selected in the Editor. A string keeps the
-        /// imported runtime asset independent from the game's concrete assembly.
-        /// </summary>
-        public string CustomNodeTypeName;
-
-        /// <summary>
-        /// Values chosen in the node's Options section when the graph was
-        /// imported. They stay on the runtime node so each graph instance keeps
-        /// its own configuration for the same authored CozyNode class.
-        /// </summary>
-        public List<RuntimeCozyNodeOption> Options = new List<RuntimeCozyNodeOption>();
-
         public override object GetValue(CozyRuntimePort port, CozyManager cozyManager)
         {
             if (port == null)
@@ -57,7 +44,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             if (customNode == null)
             {
                 return CozyNodeExecutionResult.Fail(
-                    $"Could not create custom Cozy node '{CustomNodeTypeName}'.");
+                    $"Could not create custom Cozy node '{AuthoredTypeName}'.");
             }
 
             CozyNodeContext context = new CozyNodeContext(
@@ -68,7 +55,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             if (result == null)
             {
                 return CozyNodeExecutionResult.Fail(
-                    $"Custom Cozy node '{CustomNodeTypeName}' returned no execution result.");
+                    $"Custom Cozy node '{AuthoredTypeName}' returned no execution result.");
             }
 
             return result;
@@ -96,41 +83,6 @@ namespace ShaderFactory.CozyNodes.Runtime
             return triggerListener.TryReceiveTrigger(triggerName, context);
         }
 
-        /// <summary>
-        /// Adds or replaces an imported node option.
-        /// </summary>
-        public void RegisterOption(string key, object value, Type valueType)
-        {
-            foreach (RuntimeCozyNodeOption option in Options)
-            {
-                if (option.Key != key)
-                    continue;
-
-                option.SetValue(value, valueType);
-                return;
-            }
-
-            RuntimeCozyNodeOption newOption = new RuntimeCozyNodeOption();
-            newOption.Key = key;
-            newOption.SetValue(value, valueType);
-            Options.Add(newOption);
-        }
-
-        public override bool TryGetOptionValue(string optionName, out object value)
-        {
-            foreach (RuntimeCozyNodeOption option in Options)
-            {
-                if (option.Key != optionName)
-                    continue;
-
-                value = option.GetValue();
-                return value != null;
-            }
-
-            value = null;
-            return false;
-        }
-
         private CozyNode GetCustomNode(CozyManager cozyManager)
         {
             if (cozyManager == null)
@@ -139,11 +91,11 @@ namespace ShaderFactory.CozyNodes.Runtime
                 return null;
             }
 
-            Type nodeType = CozyNodeReflection.FindNodeType(CustomNodeTypeName);
+            Type nodeType = CozyNodeReflection.FindNodeType(AuthoredTypeName);
             if (nodeType == null)
             {
                 Debug.LogError(
-                    $"Custom Cozy node type '{CustomNodeTypeName}' could not be found. " +
+                    $"Custom Cozy node type '{AuthoredTypeName}' could not be found. " +
                     "Reimport the graph after fixing the missing class.");
                 return null;
             }

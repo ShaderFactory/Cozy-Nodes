@@ -35,6 +35,66 @@ Game code creates a node by inheriting from `CozyNode`. The package generates
 its editor representation, so custom nodes never reference UnityEditor or Graph
 Toolkit APIs directly.
 
+### Authoring custom contexts and blocks
+
+Contexts and blocks use the same runtime-safe, attribute-driven style as custom
+nodes. A context is an ordered container shown on the graph canvas; a block is
+one allowed operation inside that context. Game code never needs to reference
+Graph Toolkit: Cozy Nodes generates the editor-only adapters and applies the
+correct Graph Toolkit context filtering internally.
+
+```csharp
+[CozyContextMenu("Story", "Dialogue")]
+[FlowInput]
+public sealed class DialogueContext : CozyContext
+{
+    [Option] public string Location = "Quiet Falls Port";
+}
+
+[CozyBlockFor(typeof(DialogueContext))]
+[CozyBlockMenu("Dialogue Line")]
+public sealed class DialogueLine : CozyBlock
+{
+    [Option] public string Speaker = "Celia";
+
+    [Option]
+    public string Text = "You made it before sunset.";
+}
+```
+
+Use `[Input]`, `[Output]`, `[Option]`, `[FlowInput]`, and `[FlowOutput]` on a
+context or block exactly as you do on a `CozyNode`. A block can be accepted by
+more than one context by applying `[CozyBlockFor(...)]` more than once.
+
+> [!warning]
+At runtime, a context calls `OnEnter`, executes its blocks in their displayed
+order, then calls `OnExit`. A block normally returns `Continue()`; that moves
+to the next block. A block can branch into the surrounding graph by returning
+`ExitContext` with one of its own `[FlowOutput]` names:
+
+```csharp
+[CozyBlockFor(typeof(DialogueContext))]
+[CozyBlockMenu("Player Choice")]
+[FlowOutput("Accept")]
+[FlowOutput("Decline")]
+public sealed class PlayerChoice : CozyBlock
+{
+    [Option] public bool Accepts = true;
+
+    public override CozyBlockExecutionResult Execute(CozyBlockContext context)
+    {
+        return context.GetOptionValue<bool>(nameof(Accepts))
+            ? CozyBlockExecutionResult.ExitContext("Accept")
+            : CozyBlockExecutionResult.ExitContext("Decline");
+    }
+}
+```
+
+Wire **Accept** and **Decline** from the block to whichever normal flow nodes
+should run next. This is generic control flow: Cozy Nodes does not know or
+assume that the context represents dialogue, cutscenes, or any particular game
+system.
+
 Use `[Input]` and `[Output]` for graph values. Cozy values currently support
 `string`, `int`, `float`, `bool`, and one-dimensional arrays of those types.
 Their serialization, defaults, and runtime copy behavior are defined in one

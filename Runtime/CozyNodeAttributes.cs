@@ -61,6 +61,54 @@ namespace ShaderFactory.CozyNodes.Runtime
     }
 
     /// <summary>
+    /// Places a game-authored CozyContext in the graph creation menu. The
+    /// context remains runtime-safe; Cozy Nodes generates its GTK adapter.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, Inherited = false)]
+    public sealed class CozyContextMenuAttribute : Attribute
+    {
+        public string Category { get; }
+        public string Title { get; }
+        public string Tooltip { get; set; }
+
+        public CozyContextMenuAttribute(string category, string title = null)
+        {
+            Category = category;
+            Title = title;
+        }
+    }
+
+    /// <summary>
+    /// Labels a game-authored CozyBlock in a context's Add Block menu.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, Inherited = false)]
+    public sealed class CozyBlockMenuAttribute : Attribute
+    {
+        public string Title { get; }
+        public string Tooltip { get; set; }
+
+        public CozyBlockMenuAttribute(string title = null)
+        {
+            Title = title;
+        }
+    }
+
+    /// <summary>
+    /// Declares one CozyContext type that may contain the attributed CozyBlock.
+    /// Apply more than once when the same block is valid in several contexts.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+    public sealed class CozyBlockForAttribute : Attribute
+    {
+        public Type ContextType { get; }
+
+        public CozyBlockForAttribute(Type contextType)
+        {
+            ContextType = contextType;
+        }
+    }
+
+    /// <summary>
     /// Makes a serialized field into a typed value input. When the port has no
     /// connection, its field value is the editable fallback shown in the node.
     /// </summary>

@@ -8,7 +8,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// It intentionally exposes graph behavior instead of Graph Toolkit editor
     /// objects, so custom nodes work in a built game as well as in the Editor.
     /// </summary>
-    public sealed class CozyNodeContext
+    public class CozyNodeContext
     {
         private readonly RuntimeCozyNode runtimeNode;
 

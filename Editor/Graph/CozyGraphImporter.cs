@@ -9,7 +9,7 @@ namespace ShaderFactory.CozyNodes.Editor
 {
     // Increment this version whenever imported runtime data changes. Unity will then
     // rebuild existing .cozygraph assets instead of running stale runtime data.
-    [ScriptedImporter(38, CozyGraph.AssetExtension)]
+    [ScriptedImporter(40, CozyGraph.AssetExtension)]
     public class CozyGraphImporter : ScriptedImporter
     {
         public override void OnImportAsset(AssetImportContext ctx)
@@ -52,6 +52,18 @@ namespace ShaderFactory.CozyNodes.Editor
 
             foreach (INode editorNode in editorGraph.GetNodes())
             {
+                // Block nodes are imported by their owning context. Graph Toolkit
+                // can include them in GetNodes depending on the graph version,
+                // but blocks must never become independent runtime flow nodes.
+                if (editorNode is CustomCozyBlock)
+                    continue;
+
+                if (editorNode is CustomCozyContext customCozyContext)
+                {
+                    ImportContextNode(customCozyContext, runtimeGraph, nodeIDs);
+                    continue;
+                }
+
                 if (editorNode is CustomCozyNode customEntryNode &&
                     TryImportEntry(customEntryNode, nodeIDs, runtimeGraph))
                 {
@@ -112,6 +124,142 @@ namespace ShaderFactory.CozyNodes.Editor
                 ImportDataPorts(editorNode, cozyEditorNode, runtimeNode, nodeIDs);
                 ImportFlowOutputs(editorNode, cozyEditorNode, runtimeNode, nodeIDs);
                 runtimeGraph.AllNodes.Add(runtimeNode);
+            }
+        }
+
+        private static void ImportContextNode(
+            CustomCozyContext editorContext,
+            RuntimeCozyGraph runtimeGraph,
+            Dictionary<INode, string> nodeIDs)
+        {
+            if (!nodeIDs.TryGetValue(editorContext, out string contextID))
+            {
+                Debug.LogError($"Context '{editorContext.Title}' has no stable graph ID.");
+                return;
+            }
+
+            CozyNodeDefinition contextDefinition = CozyNodeReflection.GetDefinition(
+                editorContext.ResolveCustomContextType());
+            if (contextDefinition == null)
+            {
+                Debug.LogError($"Context '{editorContext.Title}' has no valid authored type.");
+                return;
+            }
+
+            RuntimeCozyContextNode runtimeContext = editorContext.CreateRuntimeNode(
+                contextID,
+                editorContext.GetType().Name,
+                runtimeGraph);
+            ImportAuthoredElementDataPorts(
+                editorContext,
+                contextDefinition,
+                runtimeContext,
+                nodeIDs);
+            ImportAuthoredElementFlowOutputs(
+                editorContext,
+                contextDefinition,
+                runtimeContext,
+                nodeIDs);
+
+            foreach (BlockNode editorBlock in editorContext.BlockNodes)
+            {
+                if (editorBlock is not CustomCozyBlock customCozyBlock)
+                    continue;
+
+                if (!nodeIDs.TryGetValue(customCozyBlock, out string blockID))
+                {
+                    Debug.LogError(
+                        $"Block '{customCozyBlock.Title}' in context '{editorContext.Title}' " +
+                        "has no stable graph ID.");
+                    continue;
+                }
+
+                CozyNodeDefinition blockDefinition = CozyNodeReflection.GetDefinition(
+                    customCozyBlock.ResolveCustomBlockType());
+                if (blockDefinition == null)
+                {
+                    Debug.LogError(
+                        $"Block '{customCozyBlock.Title}' in context '{editorContext.Title}' " +
+                        "has no valid authored type.");
+                    continue;
+                }
+
+                RuntimeCozyBlock runtimeBlock = customCozyBlock.CreateRuntimeBlock(
+                    blockID,
+                    customCozyBlock.GetType().Name,
+                    runtimeGraph);
+                ImportAuthoredElementDataPorts(
+                    customCozyBlock,
+                    blockDefinition,
+                    runtimeBlock,
+                    nodeIDs);
+                ImportAuthoredElementFlowOutputs(
+                    customCozyBlock,
+                    blockDefinition,
+                    runtimeBlock,
+                    nodeIDs);
+
+                // Block outputs leave through the owning context at runtime.
+                // Preserve each external wire on a collision-free context key;
+                // the context runner chooses that key only when this block asks
+                // to exit through the matching authored output name.
+                foreach (RuntimeFlowConnection flowConnection in runtimeBlock.FlowOutputConnections)
+                {
+                    runtimeContext.RegisterFlowOutput(
+                        RuntimeCozyContextNode.GetBlockFlowOutputKey(
+                            runtimeBlock.NodeID,
+                            flowConnection.OutputPortName),
+                        flowConnection.NextNodeID,
+                        flowConnection.NextInputPortName);
+                }
+
+                runtimeContext.Blocks.Add(runtimeBlock);
+            }
+
+            runtimeGraph.AllNodes.Add(runtimeContext);
+        }
+
+        private static void ImportAuthoredElementDataPorts(
+            INode editorNode,
+            CozyNodeDefinition definition,
+            RuntimeCozyAuthoredElement runtimeElement,
+            Dictionary<INode, string> nodeIDs)
+        {
+            foreach (IPort port in editorNode.GetInputPorts())
+            {
+                if (definition.FlowInputs.Contains(port.Name))
+                    continue;
+
+                runtimeElement.RegisterPort(
+                    port.Name,
+                    CozyPortValueImporter.GetPortValue(port, nodeIDs),
+                    false,
+                    port.DataType);
+            }
+
+            foreach (IPort port in editorNode.GetOutputPorts())
+            {
+                if (definition.FlowOutputs.Contains(port.Name))
+                    continue;
+
+                runtimeElement.RegisterPort(
+                    port.Name,
+                    CozyPortValueImporter.GetPortValue(port, nodeIDs),
+                    true,
+                    port.DataType);
+            }
+        }
+
+        private static void ImportAuthoredElementFlowOutputs(
+            INode editorNode,
+            CozyNodeDefinition definition,
+            RuntimeCozyAuthoredElement runtimeElement,
+            Dictionary<INode, string> nodeIDs)
+        {
+            foreach (IPort outputPort in editorNode.GetOutputPorts())
+            {
+                if (definition.FlowOutputs.Contains(outputPort.Name))
+                    RegisterFlowOutput(runtimeElement, outputPort, nodeIDs);
             }
         }
 
@@ -529,7 +677,15 @@ namespace ShaderFactory.CozyNodes.Editor
             {
                 Dictionary<INode, string> nodeIDs = new Dictionary<INode, string>();
                 foreach (INode node in editorGraph.GetNodes())
+                {
                     nodeIDs[node] = node.ID.ToString();
+
+                    if (node is not ContextNode contextNode)
+                        continue;
+
+                    foreach (BlockNode blockNode in contextNode.BlockNodes)
+                        nodeIDs[blockNode] = blockNode.ID.ToString();
+                }
 
                 return new ImportedGraph
                 {

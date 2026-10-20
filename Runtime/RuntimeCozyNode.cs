@@ -166,16 +166,9 @@ namespace ShaderFactory.CozyNodes.Runtime
 
         private RuntimeCozyNode GetNodeByID(string nodeID)
         {
-            if (Graph == null)
-                return null;
-
-            foreach (RuntimeCozyNode node in Graph.AllNodes)
-            {
-                if (node.NodeID == nodeID)
-                    return node;
-            }
-
-            return null;
+            return Graph != null && Graph.TryGetNode(nodeID, out RuntimeCozyNode node)
+                ? node
+                : null;
         }
 
         /// <summary>

@@ -25,6 +25,13 @@ independent from any one game while making custom game nodes straightforward to 
 - Runtime value evaluation must follow input connections recursively until it reaches
   a direct value or a source node that can calculate the requested output.
 
+## Versioning
+
+- Every change set bumps `version` in `package.json` (Semantic Versioning) and adds
+  an entry to `CHANGELOG.md`. Removing or renaming a public node, attribute or
+  type is a major version.
+- Releases are GitHub Releases tagged `vX.Y.Z`, with the changelog entry as notes.
+
 ## Verification
 
 - When adding a core node, build the smallest graph that proves its behavior.

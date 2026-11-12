@@ -7,7 +7,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// connected flow target rather than becoming a runtime node itself.
     /// </summary>
     [Serializable]
-    public class RuntimeCozyGraphEntry
+    internal class RuntimeCozyGraphEntry
     {
         public CozyGraphEntryKind Kind;
         public string Name;

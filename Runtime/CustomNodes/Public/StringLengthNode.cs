@@ -1,6 +1,6 @@
 namespace ShaderFactory.CozyNodes.Runtime
 {
-    [CozyNodeMenu("Utilities/String", "String Length")]
+    [CozyNodeMenu("Utilities/String", "String Length", Tooltip = "How many characters Text has.")]
     public class StringLengthNode : CozyStringNode
     {
         [Input]

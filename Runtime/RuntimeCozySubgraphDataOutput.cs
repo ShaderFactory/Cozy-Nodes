@@ -9,7 +9,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// the child returns rather than read as the variable's default value.
     /// </summary>
     [Serializable]
-    public sealed class RuntimeCozySubgraphDataOutput
+    internal sealed class RuntimeCozySubgraphDataOutput
     {
         // Graph Toolkit names the parent port with the child variable's stable ID.
         public string ParentPortName;
@@ -26,7 +26,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// </summary>
         public bool TryResolveValue(
             RuntimeCozyGraph childGraph,
-            CozyManager cozyManager,
+            CozyGraphSession session,
             CozyRuntimeVariables childVariables,
             out object value,
             out string errorMessage)
@@ -93,7 +93,7 @@ namespace ShaderFactory.CozyNodes.Runtime
                     return false;
                 }
 
-                value = node.GetValue(sourcePort, cozyManager);
+                value = node.GetValue(sourcePort, session);
                 return true;
             }
 

@@ -21,6 +21,9 @@ namespace ShaderFactory.CozyNodes.Editor
                 return;
 
             node.Title = definition.Title;
+            if (!string.IsNullOrWhiteSpace(definition.Tooltip))
+                node.Tooltip = definition.Tooltip;
+
             if (definition.HasAccentColor)
                 node.DefaultColor = definition.AccentColor;
             else if (definition.HasColor)

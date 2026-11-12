@@ -15,7 +15,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// <summary>
     /// Writes a text value to the Unity Console and continues execution.
     /// </summary>
-    [CozyNodeMenu("Debug", "Print")]
+    [CozyNodeMenu("Debug", "Print", Tooltip = "Writes Message to the Unity Console as a log, warning or error, then continues.")]
     [CozyNodeIcon("Packages/com.shaderfactory.cozynodes/Editor/Icons/Print.png")]
     [CozyNodeWidth(270)]
     [CozyNodeColor(0.114f * 1.5f, 0.122f * 1.5f, 0.141f * 1.5f)]

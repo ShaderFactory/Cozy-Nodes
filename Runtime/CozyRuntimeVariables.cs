@@ -5,10 +5,10 @@ namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Per-execution values copied from a graph's Blackboard definitions.
-    /// Each CozyManager receives a separate instance, so playing a graph never
+    /// Each CozyGraphSession receives a separate instance, so playing a graph never
     /// writes values back into its imported .cozygraph asset.
     /// </summary>
-    public class CozyRuntimeVariables
+    internal class CozyRuntimeVariables
     {
         private readonly Dictionary<string, object> valuesByID =
             new Dictionary<string, object>();

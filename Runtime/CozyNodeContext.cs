@@ -13,10 +13,10 @@ namespace ShaderFactory.CozyNodes.Runtime
         private readonly RuntimeCozyNode runtimeNode;
 
         /// <summary>
-        /// The manager running this graph. A game node can use it to invoke Cozy
-        /// events, access runtime Blackboard variables, or reach game-owned code.
+        /// The session running this graph. A game node can use it to invoke Cozy
+        /// events and access execution-local Blackboard variables.
         /// </summary>
-        public CozyManager Manager { get; }
+        public CozyGraphSession Session { get; }
 
         /// <summary>
         /// The named flow input that started this execution. It is null when a
@@ -26,11 +26,11 @@ namespace ShaderFactory.CozyNodes.Runtime
 
         internal CozyNodeContext(
             RuntimeCozyNode runtimeNode,
-            CozyManager manager,
+            CozyGraphSession session,
             string enteredFlowInputName = null)
         {
             this.runtimeNode = runtimeNode;
-            Manager = manager;
+            Session = session;
             EnteredFlowInputName = enteredFlowInputName;
         }
 
@@ -43,7 +43,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             if (runtimeNode == null)
                 return null;
 
-            return runtimeNode.GetInputValue(inputPortName, Manager);
+            return runtimeNode.GetInputValue(inputPortName, Session);
         }
 
         /// <summary>
@@ -76,7 +76,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             if (runtimeNode == null)
                 return typedValues;
 
-            List<object> values = runtimeNode.GetInputValues(inputListName, Manager);
+            List<object> values = runtimeNode.GetInputValues(inputListName, Session);
             foreach (object value in values)
             {
                 if (value is T typedValue)
@@ -99,6 +99,35 @@ namespace ShaderFactory.CozyNodes.Runtime
         }
 
         /// <summary>
+        /// Resolves every port of a <see cref="ProvidedInputSetAttribute"/> field,
+        /// keyed by the provider's stable key (for example a language code).
+        /// Values that cannot be converted to T are returned as default.
+        /// </summary>
+        public Dictionary<string, T> GetProvidedInputValues<T>(string inputSetName)
+        {
+            Dictionary<string, T> typedValues = new Dictionary<string, T>(StringComparer.Ordinal);
+            if (runtimeNode == null)
+                return typedValues;
+
+            foreach (KeyValuePair<string, object> entry in runtimeNode.GetProvidedInputValues(inputSetName, Session))
+            {
+                if (entry.Value is T typedValue)
+                {
+                    typedValues[entry.Key] = typedValue;
+                    continue;
+                }
+
+                typedValues[entry.Key] =
+                    CozyValueConverter.TryConvert(entry.Value, typeof(T), out object convertedValue) &&
+                    convertedValue is T convertedTypedValue
+                        ? convertedTypedValue
+                        : default;
+            }
+
+            return typedValues;
+        }
+
+        /// <summary>
         /// Returns the concrete type currently assigned to one output. Generic
         /// Cozy nodes use this to construct a value whose element type was
         /// selected by the graph author.
@@ -109,23 +138,24 @@ namespace ShaderFactory.CozyNodes.Runtime
         }
 
         /// <summary>
-        /// Gets the Blackboard reference carried by an input connected directly to
-        /// a Blackboard variable node. This deliberately differs from
-        /// <see cref="GetInputValue"/>, which resolves that reference to the
-        /// variable's current value.
+        /// Gets the stable Blackboard variable ID carried by an input connected
+        /// directly to a Blackboard variable node. This deliberately differs
+        /// from <see cref="GetInputValue"/>, which resolves that reference to
+        /// the variable's current value. Pass the returned ID to
+        /// <see cref="CozyGraphSession.TrySetBlackboardValue"/> when a custom
+        /// node needs to write that variable.
         /// </summary>
-        public bool TryGetInputVariableReference(
+        public bool TryGetInputVariableID(
             string inputPortName,
-            out RuntimeVariableReference variableReference)
+            out string variableID)
         {
-            variableReference = null;
+            variableID = null;
             CozyRuntimePort inputPort = runtimeNode?.GetPortByName(inputPortName);
             if (inputPort?.type != CozyRuntimePort.PortType.Variable)
                 return false;
 
-            variableReference = inputPort.variableReference;
-            return variableReference != null &&
-                   !string.IsNullOrEmpty(variableReference.variableID);
+            variableID = inputPort.variableReference?.variableID;
+            return !string.IsNullOrEmpty(variableID);
         }
 
         /// <summary>

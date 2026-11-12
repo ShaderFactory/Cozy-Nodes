@@ -1,6 +1,6 @@
 namespace ShaderFactory.CozyNodes.Runtime
 {
-    [CozyNodeMenu("Utilities/String", "String To Upper")]
+    [CozyNodeMenu("Utilities/String", "String To Upper", Tooltip = "Text in uppercase.")]
     public class StringToUpperNode : CozyStringNode
     {
         [Input]

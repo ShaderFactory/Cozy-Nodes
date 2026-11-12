@@ -9,7 +9,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// graph nodes.
     /// </summary>
     [Serializable]
-    public sealed class RuntimeCozyContextNode : RuntimeCozyAuthoredElement
+    internal sealed class RuntimeCozyContextNode : RuntimeCozyAuthoredElement
     {
         public List<RuntimeCozyBlock> Blocks = new List<RuntimeCozyBlock>();
 
@@ -38,16 +38,16 @@ namespace ShaderFactory.CozyNodes.Runtime
             return blockID + "::" + outputPortName;
         }
 
-        public override CozyNodeExecutionResult Run(CozyManager cozyManager)
+        public override CozyNodeExecutionResult Run(CozyGraphSession session)
         {
-            CozyContext context = GetContext(cozyManager);
+            CozyContext context = GetContext(session);
             if (context == null)
             {
                 return CozyNodeExecutionResult.Fail(
                     $"Could not create custom Cozy context '{AuthoredTypeName}'.");
             }
 
-            CozyContextContext contextContext = new CozyContextContext(this, cozyManager);
+            CozyContextContext contextContext = new CozyContextContext(this, session);
             context.OnEnter(contextContext);
 
             foreach (RuntimeCozyBlock block in Blocks)
@@ -55,7 +55,7 @@ namespace ShaderFactory.CozyNodes.Runtime
                 if (block == null)
                     continue;
 
-                CozyBlockExecutionResult blockResult = block.Execute(cozyManager);
+                CozyBlockExecutionResult blockResult = block.Execute(session);
                 if (blockResult == null)
                 {
                     return CozyNodeExecutionResult.Fail(
@@ -89,16 +89,16 @@ namespace ShaderFactory.CozyNodes.Runtime
             return CozyNodeExecutionResult.ContinueWith("out");
         }
 
-        private CozyContext GetContext(CozyManager cozyManager)
+        private CozyContext GetContext(CozyGraphSession session)
         {
-            if (cozyManager == null)
+            if (session == null)
                 return null;
 
             Type contextType = CozyNodeReflection.FindContextType(AuthoredTypeName);
             if (contextType == null)
                 return null;
 
-            return cozyManager.GetOrCreateContext(this, contextType);
+            return session.GetOrCreateContext(this, contextType);
         }
     }
 }

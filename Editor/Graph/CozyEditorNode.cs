@@ -10,14 +10,27 @@ namespace ShaderFactory.CozyNodes.Editor
     [Serializable]
     public class CozyEditorNode : Node
     {
-        public List<CozyRuntimePort> runtimePorts;
-
         public override void OnEnable()
         {
             base.OnEnable();
 
             if (TryGetDefaultColor(out Color color))
                 DefaultColor = color;
+
+            // Graph Toolkit shows Tooltip when the mouse hovers the node header.
+            string tooltip = GetDefaultTooltip();
+            if (!string.IsNullOrWhiteSpace(tooltip))
+                Tooltip = tooltip;
+        }
+
+        /// <summary>
+        /// Gets the description shown when hovering this node's header, for
+        /// example the Tooltip of a game node's CozyNodeMenu attribute.
+        /// Returns null when the node has no description.
+        /// </summary>
+        protected virtual string GetDefaultTooltip()
+        {
+            return null;
         }
 
         /// <summary>
@@ -57,7 +70,7 @@ namespace ShaderFactory.CozyNodes.Editor
             return true;
         }
 
-        public virtual RuntimeCozyNode CreateRuntimeNode(string _nodeID, string _nodeType, RuntimeCozyGraph _graph)
+        internal virtual RuntimeCozyNode CreateRuntimeNode(string _nodeID, string _nodeType, RuntimeCozyGraph _graph)
         {
             return new RuntimeCozyNode(_nodeID, _nodeType, _graph);
         }

@@ -8,7 +8,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// value is stored, restored, defaulted, and copied; one-dimensional arrays
     /// automatically inherit that behavior from their element type.
     /// </summary>
-    public static class CozyValueTypeRegistry
+    internal static class CozyValueTypeRegistry
     {
         private static readonly Dictionary<Type, CozyScalarValueCodec> codecs =
             new Dictionary<Type, CozyScalarValueCodec>

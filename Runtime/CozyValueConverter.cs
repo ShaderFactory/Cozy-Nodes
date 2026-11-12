@@ -8,7 +8,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// permits between connected value ports. Both the Editor and runtime use this
     /// class so a connection that looks valid in a graph also works in Play Mode.
     /// </summary>
-    public static class CozyValueConverter
+    internal static class CozyValueConverter
     {
         /// <summary>
         /// Returns whether a source port type can feed a destination port type.

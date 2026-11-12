@@ -5,11 +5,11 @@ using UnityEngine;
 namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
-    /// Calls an imported local subgraph. Its flow output is chosen only when the
+    /// Calls an imported local or external subgraph. Its flow output is chosen only when the
     /// child reaches a matching RuntimeCozySubgraphExitNode.
     /// </summary>
     [Serializable]
-    public sealed class RuntimeCozySubgraphNode : RuntimeCozyNode
+    internal sealed class RuntimeCozySubgraphNode : RuntimeCozyNode
     {
         public RuntimeCozyGraph Subgraph;
 
@@ -32,7 +32,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// renaming a child Blackboard entry does not break the call.
         /// </summary>
         public bool TryPopulateChildVariables(
-            CozyManager cozyManager,
+            CozyGraphSession session,
             CozyRuntimeVariables childVariables,
             out string errorMessage)
         {
@@ -52,7 +52,7 @@ namespace ShaderFactory.CozyNodes.Runtime
                     return false;
                 }
 
-                object value = GetInputValue(dataInput.ParentPortName, cozyManager);
+                object value = GetInputValue(dataInput.ParentPortName, session);
                 if (!childVariables.TrySetValue(
                         dataInput.ChildVariableID,
                         value,
@@ -75,7 +75,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// this node only knows the stable variable-to-port mapping.
         /// </summary>
         public bool TryCollectChildOutputValues(
-            CozyManager cozyManager,
+            CozyGraphSession session,
             CozyRuntimeVariables childVariables,
             out Dictionary<string, object> outputValues,
             out string errorMessage)
@@ -99,7 +99,7 @@ namespace ShaderFactory.CozyNodes.Runtime
 
                 if (!dataOutput.TryResolveValue(
                         Subgraph,
-                        cozyManager,
+                        session,
                         childVariables,
                         out object value,
                         out string sourceError))
@@ -118,13 +118,13 @@ namespace ShaderFactory.CozyNodes.Runtime
             return true;
         }
 
-        public override object GetValue(CozyRuntimePort port, CozyManager cozyManager)
+        public override object GetValue(CozyRuntimePort port, CozyGraphSession session)
         {
             if (port == null || !IsDataOutputPort(port.Key))
-                return base.GetValue(port, cozyManager);
+                return base.GetValue(port, session);
 
-            if (cozyManager == null ||
-                !cozyManager.TryGetSubgraphOutputValue(this, port.Key, out object value))
+            if (session == null ||
+                !session.TryGetSubgraphOutputValue(this, port.Key, out object value))
             {
                 Debug.LogWarning(
                     $"Subgraph '{NodeType}' output '{port.Key}' was read before " +
@@ -144,7 +144,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         }
 
         public override CozyNodeExecutionResult Run(
-            CozyManager cozyManager,
+            CozyGraphSession session,
             string enteredFlowInputName)
         {
             string flowInputName = string.IsNullOrWhiteSpace(enteredFlowInputName)

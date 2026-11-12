@@ -16,8 +16,8 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// point inputs. The selected operation is stored in the node's Options
     /// section, while A and B can each be direct values or connected outputs.
     /// </summary>
-    [CozyNodeMenu("Utilities/Math", "Float Math")]
-    public class FloatMathNode : CozyNode
+    [CozyNodeMenu("Utilities/Math", "Float Math", Tooltip = "Adds, subtracts, multiplies or divides two floats, as selected in Options.")]
+    public class FloatMathNode : CozyFloatNode
     {
         [Option("Operation", Tooltip = "The calculation applied to A and B.")]
         public FloatMathOperation Operation = FloatMathOperation.Add;

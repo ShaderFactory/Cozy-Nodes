@@ -2,7 +2,7 @@ namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Explicitly terminates the active Cozy graph execution. This ends the
-    /// whole run, including when called from a loop or local subgraph.
+    /// whole run, including when called from a loop or subgraph.
     /// </summary>
     [CozyNodeMenu(
         "Control Flow",

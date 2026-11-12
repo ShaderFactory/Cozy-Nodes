@@ -2,7 +2,7 @@ using System;
 
 namespace ShaderFactory.CozyNodes.Runtime
 {
-    [CozyNodeMenu("Utilities/String", "String Substring")]
+    [CozyNodeMenu("Utilities/String", "String Substring", Tooltip = "Part of Text from Start Index. Length -1 takes everything until the end.")]
     public class StringSubstringNode : CozyStringNode
     {
         [Input]

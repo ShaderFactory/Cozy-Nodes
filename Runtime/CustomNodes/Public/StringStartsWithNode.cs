@@ -1,6 +1,6 @@
 namespace ShaderFactory.CozyNodes.Runtime
 {
-    [CozyNodeMenu("Utilities/String", "String Starts With")]
+    [CozyNodeMenu("Utilities/String", "String Starts With", Tooltip = "True when Text starts with Value. Case-sensitive.")]
     public class StringStartsWithNode : CozyStringNode
     {
         [Input]

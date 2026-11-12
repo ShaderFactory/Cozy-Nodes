@@ -6,7 +6,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// <summary>
     /// Creates a one-dimensional array from a configurable number of values.
     /// </summary>
-    [CozyNodeMenu("Utilities/Array", "Array Make")]
+    [CozyNodeMenu("Utilities/Array", "Array Make", Tooltip = "Builds an array from its element inputs. Choose the element type and how many elements in the node.")]
     public sealed class ArrayMakeNode : CozyArrayNode
     {
         [Option("Element Count", Tooltip = "How many values this array contains.")]

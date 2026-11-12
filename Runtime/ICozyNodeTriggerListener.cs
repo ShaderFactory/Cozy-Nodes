@@ -2,7 +2,7 @@ namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
     /// Implemented by a public CozyNode that can resume its current flow after
-    /// <see cref="CozyManager.Trigger"/> receives a matching named signal.
+    /// <see cref="CozyGraphSession.Trigger"/> receives a matching named signal.
     /// </summary>
     public interface ICozyNodeTriggerListener
     {

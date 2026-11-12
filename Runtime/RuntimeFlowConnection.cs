@@ -6,7 +6,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// One execution-flow connection imported from a named editor output port.
     /// </summary>
     [Serializable]
-    public class RuntimeFlowConnection
+    internal class RuntimeFlowConnection
     {
         public string OutputPortName;
         public string NextNodeID;

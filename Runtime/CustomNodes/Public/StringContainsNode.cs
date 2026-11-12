@@ -1,6 +1,6 @@
 namespace ShaderFactory.CozyNodes.Runtime
 {
-    [CozyNodeMenu("Utilities/String", "String Contains")]
+    [CozyNodeMenu("Utilities/String", "String Contains", Tooltip = "True when Text contains Value. Case-sensitive.")]
     [CozyNodeIcon("Packages/com.shaderfactory.cozynodes/Editor/Icons/StringContains.png")]
     public class StringContainsNode : CozyStringNode
     {

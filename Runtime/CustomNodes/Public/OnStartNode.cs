@@ -1,11 +1,11 @@
 namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
-    /// The graph entry CozyManager runs automatically after it has initialized
-    /// this graph's variables and node instances.
+    /// The graph's default entry. A CozyGraphSession runs it whenever Start is
+    /// called, whether that session comes from a CozyManager or game code.
     /// </summary>
-    [CozyNodeMenu("Events", "On Start")]
-    [CozyGraphEntry(CozyGraphEntryKind.OnStart, Name = "On Start")]
+    [CozyNodeMenu("Events", "On Graph Start", Tooltip = "Where the graph begins when it starts running.")]
+    [CozyGraphEntry(CozyGraphEntryKind.OnStart, Name = "On Graph Start")]
     [FlowOutput("Execute")]
     public class OnStartNode : CozyEventNode
     {

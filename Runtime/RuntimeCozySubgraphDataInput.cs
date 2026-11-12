@@ -7,7 +7,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// variable that represents it inside the child graph.
     /// </summary>
     [Serializable]
-    public sealed class RuntimeCozySubgraphDataInput
+    internal sealed class RuntimeCozySubgraphDataInput
     {
         // Graph Toolkit names the parent port with the child variable's stable ID.
         public string ParentPortName;

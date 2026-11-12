@@ -20,6 +20,22 @@ namespace ShaderFactory.CozyNodes.Editor
         /// </summary>
         public static object GetPortValue(IPort port, Dictionary<INode, string> nodeIDs)
         {
+            return GetPortValue(
+                port,
+                node => nodeIDs != null && nodeIDs.TryGetValue(node, out string nodeID)
+                    ? nodeID
+                    : null);
+        }
+
+        /// <summary>
+        /// Converts a data port using the supplied stable node-ID lookup. Local
+        /// subgraphs use the importer-owned lookup, while an external subgraph
+        /// uses the IDs already serialized by its own imported graph asset.
+        /// </summary>
+        internal static object GetPortValue(
+            IPort port,
+            Func<INode, string> getNodeID)
+        {
             if (port == null)
                 return default;
 
@@ -50,8 +66,16 @@ namespace ShaderFactory.CozyNodes.Editor
 
             // A regular data connection stays connected at runtime. The value node is
             // evaluated only when another node asks for this input's value.
+            string sourceNodeID = getNodeID?.Invoke(connectedNode);
+            if (string.IsNullOrWhiteSpace(sourceNodeID))
+            {
+                Debug.LogError(
+                    $"Could not import the source node for data port '{port.DisplayName}'.");
+                return null;
+            }
+
             return new RuntimePortReference(
-                nodeIDs[connectedNode],
+                sourceNodeID,
                 connectedPort.Name);
         }
 

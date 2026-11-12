@@ -7,7 +7,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// imported graph asset and is never changed while the game is running.
     /// </summary>
     [Serializable]
-    public class RuntimeCozyVariableDefinition
+    internal class RuntimeCozyVariableDefinition
     {
         public string VariableID;
         public string Name;

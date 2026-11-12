@@ -8,11 +8,8 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// concrete ports let Graph Toolkit discover every supported array type for
     /// Blackboard variables and local-subgraph boundaries.
     /// </summary>
-    [CozyNodeMenu("Utilities/Array", "Array Empty")]
-    [CozyNodeColor(0.463f, 0.404f, 0.231f)]
-    [CozyNodeAccentColor(0.737f, 0.706f, 0.624f)]
-    [CozyNodeHeaderTextColor(1f, 1f, 1f)]
-    public sealed class ArrayEmptyNode : CozyNode
+    [CozyNodeMenu("Utilities/Array", "Array Empty", Tooltip = "An empty array of each supported type: string, integer, float and boolean.")]
+    public sealed class ArrayEmptyNode : CozyArrayFamilyNode
     {
         [Output("String Array")]
         public string[] StringArray;

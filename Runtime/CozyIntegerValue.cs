@@ -7,11 +7,11 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// consistent: invalid values are reported and safely treated as zero rather
     /// than being silently rounded or converted.
     /// </summary>
-    public static class CozyIntegerValue
+    internal static class CozyIntegerValue
     {
-        public static int ReadInput(RuntimeCozyNode node, string portName, CozyManager cozyManager)
+        public static int ReadInput(RuntimeCozyNode node, string portName, CozyGraphSession session)
         {
-            object value = node.GetInputValue(portName, cozyManager);
+            object value = node.GetInputValue(portName, session);
             if (value is int integerValue)
                 return integerValue;
 

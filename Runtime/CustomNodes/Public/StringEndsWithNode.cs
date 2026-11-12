@@ -1,6 +1,6 @@
 namespace ShaderFactory.CozyNodes.Runtime
 {
-    [CozyNodeMenu("Utilities/String", "String Ends With")]
+    [CozyNodeMenu("Utilities/String", "String Ends With", Tooltip = "True when Text ends with Value. Case-sensitive.")]
     public class StringEndsWithNode : CozyStringNode
     {
         [Input]

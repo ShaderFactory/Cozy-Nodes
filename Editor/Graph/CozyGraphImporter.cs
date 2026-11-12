@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEditor;
 using UnityEditor.AssetImporters;
 using UnityEngine;
 using Unity.GraphToolkit.Editor;
@@ -9,7 +10,7 @@ namespace ShaderFactory.CozyNodes.Editor
 {
     // Increment this version whenever imported runtime data changes. Unity will then
     // rebuild existing .cozygraph assets instead of running stale runtime data.
-    [ScriptedImporter(41, CozyGraph.AssetExtension)]
+    [ScriptedImporter(43, CozyGraph.AssetExtension)]
     public class CozyGraphImporter : ScriptedImporter
     {
         public override void OnImportAsset(AssetImportContext ctx)
@@ -360,16 +361,12 @@ namespace ShaderFactory.CozyNodes.Editor
                 return;
             }
 
-            if (!CozyGraphToolkitSubgraphInterface.IsLocalSubgraphNode(editorNode))
-            {
-                Debug.LogError(
-                    $"Subgraph '{editorNode.Title}' is an external graph asset. " +
-                    "This Cozy Nodes phase supports local subgraphs only.");
-                return;
-            }
-
-            RuntimeCozyGraph childRuntimeGraph = importContext.GetOrImportSubgraph(
-                description.Subgraph);
+            RuntimeCozyGraph childRuntimeGraph =
+                CozyGraphToolkitSubgraphInterface.IsLocalSubgraphNode(editorNode)
+                    ? importContext.GetOrImportLocalSubgraph(description.Subgraph)
+                    : importContext.GetExternalSubgraph(
+                        description.Subgraph,
+                        editorNode.Title);
             if (childRuntimeGraph == null)
                 return;
 
@@ -422,9 +419,9 @@ namespace ShaderFactory.CozyNodes.Editor
                 {
                     runtimeDataOutput.HasConnectedSource = true;
                     runtimeDataOutput.Source.SetValue(
-                        CozyPortValueImporter.GetPortValue(
-                            childOutputSource,
-                            importContext.GetNodeIDs(description.Subgraph)),
+                        importContext.GetPortValue(
+                            description.Subgraph,
+                            childOutputSource),
                         valueType);
                     runtimeDataOutput.Source.ValueTypeName = valueType.AssemblyQualifiedName;
                 }
@@ -447,6 +444,14 @@ namespace ShaderFactory.CozyNodes.Editor
                         description.Subgraph,
                         firstChildPort.GetNode(),
                         out string targetNodeID))
+                {
+                    Debug.LogError(
+                        $"Subgraph '{editorNode.Title}' flow input '{flowInput.Name}' " +
+                        "does not lead to an importable child node.");
+                    return;
+                }
+
+                if (!childRuntimeGraph.TryGetNode(targetNodeID, out _))
                 {
                     Debug.LogError(
                         $"Subgraph '{editorNode.Title}' flow input '{flowInput.Name}' " +
@@ -591,9 +596,9 @@ namespace ShaderFactory.CozyNodes.Editor
         }
 
         /// <summary>
-        /// Owns one imported runtime object per authored graph. Local subgraphs are
-        /// added as sub-assets of the root .cozygraph asset so normal Unity object
-        /// references serialize safely; recursive local subgraphs are rejected.
+        /// Owns the imported runtime objects needed while importing one source graph.
+        /// Local subgraphs become sub-assets of that graph. External subgraphs keep
+        /// their own imported runtime asset, which the parent references directly.
         /// </summary>
         private sealed class ImportContext
         {
@@ -608,6 +613,7 @@ namespace ShaderFactory.CozyNodes.Editor
             private readonly Dictionary<Graph, ImportedGraph> importedGraphs =
                 new Dictionary<Graph, ImportedGraph>();
             private int childGraphCount;
+            private Graph rootEditorGraph;
 
             internal ImportContext(AssetImportContext assetImportContext)
             {
@@ -616,6 +622,7 @@ namespace ShaderFactory.CozyNodes.Editor
 
             internal void RegisterRoot(Graph rootEditorGraph, RuntimeCozyGraph rootRuntimeGraph)
             {
+                this.rootEditorGraph = rootEditorGraph;
                 importedGraphs.Add(
                     rootEditorGraph,
                     CreateImportedGraph(rootEditorGraph, rootRuntimeGraph));
@@ -627,7 +634,7 @@ namespace ShaderFactory.CozyNodes.Editor
                     importedGraph.IsImporting = false;
             }
 
-            internal RuntimeCozyGraph GetOrImportSubgraph(Graph editorGraph)
+            internal RuntimeCozyGraph GetOrImportLocalSubgraph(Graph editorGraph)
             {
                 if (importedGraphs.TryGetValue(editorGraph, out ImportedGraph existingGraph))
                 {
@@ -656,6 +663,57 @@ namespace ShaderFactory.CozyNodes.Editor
                 return childRuntimeGraph;
             }
 
+            /// <summary>
+            /// Returns the runtime artifact owned by an external Cozy Graph asset.
+            /// The source dependency makes Unity reimport this parent whenever the
+            /// referenced graph changes, without duplicating the external graph's
+            /// imported runtime data into the parent asset.
+            /// </summary>
+            internal RuntimeCozyGraph GetExternalSubgraph(
+                Graph externalEditorGraph,
+                string displayName)
+            {
+                if (externalEditorGraph == null)
+                {
+                    Debug.LogError($"External subgraph '{displayName}' has no graph asset.");
+                    return null;
+                }
+
+                string externalAssetPath = GraphDatabase.GetGraphAssetPath(externalEditorGraph);
+                if (string.IsNullOrWhiteSpace(externalAssetPath))
+                {
+                    Debug.LogError(
+                        $"External subgraph '{displayName}' does not belong to a saved Cozy Graph asset.");
+                    return null;
+                }
+
+                if (!TryValidateExternalSubgraphTree(out string cycleError))
+                {
+                    Debug.LogError(cycleError);
+                    return null;
+                }
+
+                // This graph serializes a reference to the imported result of
+                // another graph, not merely its source file. Declaring an
+                // artifact dependency gives Unity the correct import order and
+                // reimports this parent after the external graph is rebuilt.
+                assetImportContext.DependsOnArtifact(externalAssetPath);
+                RuntimeCozyGraph externalRuntimeGraph =
+                    AssetDatabase.LoadAssetAtPath<RuntimeCozyGraph>(externalAssetPath);
+                if (externalRuntimeGraph == null)
+                {
+                    // An asset first discovered in the same refresh has no
+                    // artifact yet. Unity records the dependency above and
+                    // imports this parent again once the child is ready.
+                    Debug.LogWarning(
+                        $"External subgraph '{displayName}' at '{externalAssetPath}' is still importing. " +
+                        "This graph will reimport automatically when it is ready.");
+                    return null;
+                }
+
+                return externalRuntimeGraph;
+            }
+
             internal Dictionary<INode, string> GetNodeIDs(Graph editorGraph)
             {
                 return importedGraphs[editorGraph].NodeIDs;
@@ -668,7 +726,105 @@ namespace ShaderFactory.CozyNodes.Editor
 
             internal bool TryGetNodeID(Graph editorGraph, INode node, out string nodeID)
             {
-                return GetNodeIDs(editorGraph).TryGetValue(node, out nodeID);
+                if (importedGraphs.TryGetValue(editorGraph, out ImportedGraph importedGraph) &&
+                    importedGraph.NodeIDs.TryGetValue(node, out nodeID))
+                {
+                    return true;
+                }
+
+                nodeID = node?.ID.ToString();
+                return !string.IsNullOrWhiteSpace(nodeID);
+            }
+
+            internal object GetPortValue(Graph editorGraph, IPort port)
+            {
+                return CozyPortValueImporter.GetPortValue(
+                    port,
+                    node => TryGetNodeID(editorGraph, node, out string nodeID)
+                        ? nodeID
+                        : null);
+            }
+
+            private bool TryValidateExternalSubgraphTree(out string errorMessage)
+            {
+                errorMessage = null;
+                if (rootEditorGraph == null)
+                    return true;
+
+                List<string> externalAssetPathStack = new List<string>
+                {
+                    assetImportContext.assetPath
+                };
+                HashSet<Graph> visitedGraphs = new HashSet<Graph>();
+                return TryValidateExternalSubgraphTree(
+                    rootEditorGraph,
+                    externalAssetPathStack,
+                    visitedGraphs,
+                    out errorMessage);
+            }
+
+            private static bool TryValidateExternalSubgraphTree(
+                Graph graph,
+                List<string> externalAssetPathStack,
+                HashSet<Graph> visitedGraphs,
+                out string errorMessage)
+            {
+                errorMessage = null;
+                if (graph == null || !visitedGraphs.Add(graph))
+                    return true;
+
+                foreach (INode node in graph.GetNodes())
+                {
+                    if (node is not ISubgraphNode subgraphNode)
+                        continue;
+
+                    Graph childGraph = subgraphNode.GetSubgraph();
+                    if (childGraph == null)
+                        continue;
+
+                    bool isLocal = CozyGraphToolkitSubgraphInterface.IsLocalSubgraphNode(node);
+                    string childAssetPath = isLocal
+                        ? null
+                        : GraphDatabase.GetGraphAssetPath(childGraph);
+                    if (!isLocal && string.IsNullOrWhiteSpace(childAssetPath))
+                    {
+                        errorMessage =
+                            $"External subgraph '{node.Title}' does not belong to a saved Cozy Graph asset.";
+                        return false;
+                    }
+
+                    if (!isLocal)
+                    {
+                        int cycleStartIndex = externalAssetPathStack.IndexOf(childAssetPath);
+                        if (cycleStartIndex >= 0)
+                        {
+                            List<string> cycle = externalAssetPathStack.GetRange(
+                                cycleStartIndex,
+                                externalAssetPathStack.Count - cycleStartIndex);
+                            cycle.Add(childAssetPath);
+                            errorMessage =
+                                "External Cozy Graph references cannot form a cycle: " +
+                                string.Join(" -> ", cycle);
+                            return false;
+                        }
+
+                        externalAssetPathStack.Add(childAssetPath);
+                    }
+
+                    if (!TryValidateExternalSubgraphTree(
+                            childGraph,
+                            externalAssetPathStack,
+                            visitedGraphs,
+                            out errorMessage))
+                    {
+                        return false;
+                    }
+
+                    if (!isLocal)
+                        externalAssetPathStack.RemoveAt(externalAssetPathStack.Count - 1);
+                }
+
+                return true;
             }
 
             private static ImportedGraph CreateImportedGraph(

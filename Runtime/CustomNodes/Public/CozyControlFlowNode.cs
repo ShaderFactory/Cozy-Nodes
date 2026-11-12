@@ -5,9 +5,11 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// Keeping the control-flow palette here makes that category read as one
     /// family without repeating visual attributes on every node.
     /// </summary>
-    [CozyNodeColor(0.7882353f, 0.5921568f, 0f)]
-    [CozyNodeAccentColor(0.9764706f, 0.9450980f, 0.8509804f)]
-    [CozyNodeHeaderTextColor(1f, 1f, 1f)]
+    // A muted warm white keeps control flow distinct without overpowering the
+    // canvas, while retaining enough contrast for dark iconography and labels.
+    [CozyNodeColor(0.7058824f, 0.6901961f, 0.6470588f)]
+    [CozyNodeAccentColor(0.9019608f, 0.8549020f, 0.6392157f)]
+    [CozyNodeHeaderTextColor(0.1058824f, 0.1137255f, 0.1294118f)]
     public abstract class CozyControlFlowNode : CozyNode
     {
     }

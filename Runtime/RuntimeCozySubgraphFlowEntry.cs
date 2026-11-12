@@ -7,7 +7,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// to the first regular node reached inside an imported child graph.
     /// </summary>
     [Serializable]
-    public sealed class RuntimeCozySubgraphFlowEntry
+    internal sealed class RuntimeCozySubgraphFlowEntry
     {
         // GTK names the parent port with the source variable's stable ID.
         public string ParentInputPortName;

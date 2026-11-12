@@ -6,7 +6,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// A core value node that joins a configurable number of text inputs into
     /// Result. It uses only the public CozyNode API available to game projects.
     /// </summary>
-    [CozyNodeMenu("Utilities/String", "String Combine")]
+    [CozyNodeMenu("Utilities/String", "String Combine", Tooltip = "Joins all text inputs, in order, into one text.")]
     [CozyNodeIcon("Packages/com.shaderfactory.cozynodes/Editor/Icons/StringCombine.png")]
     [CozyNodeWidth(270)]
     public class StringCombineNode : CozyStringNode

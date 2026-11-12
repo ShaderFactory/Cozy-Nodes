@@ -143,6 +143,7 @@ namespace ShaderFactory.CozyNodes.Editor
 
             activePulses.Clear();
             expiredPulseKeys.Clear();
+
         }
     }
 }

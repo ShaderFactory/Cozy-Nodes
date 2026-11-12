@@ -10,7 +10,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// It is cached by node type, so fields and attributes are inspected once
     /// instead of every time a graph evaluates a port.
     /// </summary>
-    public static class CozyNodeReflection
+    internal static class CozyNodeReflection
     {
         private static readonly Dictionary<Type, CozyNodeDefinition> definitionsByType =
             new Dictionary<Type, CozyNodeDefinition>();
@@ -69,7 +69,7 @@ namespace ShaderFactory.CozyNodes.Runtime
 
         /// <summary>
         /// Creates a custom node instance. The constructor must be public and take
-        /// no parameters so the graph can create one instance per CozyManager.
+        /// no parameters so the graph can create one instance per CozyGraphSession.
         /// </summary>
         public static CozyNode CreateNodeInstance(Type nodeType)
         {
@@ -83,7 +83,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         }
 
         /// <summary>
-        /// Creates one game-authored context instance for a running CozyManager.
+        /// Creates one game-authored context instance for a running CozyGraphSession.
         /// Context instances are kept by the manager, never by the graph asset.
         /// </summary>
         public static CozyContext CreateContextInstance(Type contextType)
@@ -98,7 +98,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         }
 
         /// <summary>
-        /// Creates one game-authored block instance for a running CozyManager.
+        /// Creates one game-authored block instance for a running CozyGraphSession.
         /// </summary>
         public static CozyBlock CreateBlockInstance(Type blockType)
         {
@@ -215,18 +215,27 @@ namespace ShaderFactory.CozyNodes.Runtime
                 OutputAttribute outputAttribute = field.GetCustomAttribute<OutputAttribute>(true);
                 OptionAttribute optionAttribute = field.GetCustomAttribute<OptionAttribute>(true);
                 InputListAttribute inputListAttribute = field.GetCustomAttribute<InputListAttribute>(true);
+                ProvidedInputSetAttribute providedInputSetAttribute =
+                    field.GetCustomAttribute<ProvidedInputSetAttribute>(true);
                 CozyTypeParameterPortAttribute typeParameterPortAttribute =
                     field.GetCustomAttribute<CozyTypeParameterPortAttribute>(true);
                 CozyBlackboardVariableAttribute blackboardVariableAttribute =
                     field.GetCustomAttribute<CozyBlackboardVariableAttribute>(true);
 
                 if (inputAttribute == null && outputAttribute == null &&
-                    optionAttribute == null && inputListAttribute == null)
+                    optionAttribute == null && inputListAttribute == null &&
+                    providedInputSetAttribute == null)
                     continue;
 
                 if (optionAttribute != null)
                 {
                     AddOptionDefinition(definition, field, optionAttribute, defaultInstance);
+                    continue;
+                }
+
+                if (providedInputSetAttribute != null)
+                {
+                    AddProvidedInputSetDefinition(definition, field, providedInputSetAttribute);
                     continue;
                 }
 
@@ -353,6 +362,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             {
                 CozyBlockMenuAttribute blockMenu =
                     elementType.GetCustomAttribute<CozyBlockMenuAttribute>(true);
+                definition.Category = blockMenu?.Category;
                 definition.Title = string.IsNullOrWhiteSpace(blockMenu?.Title)
                     ? HumanizeName(elementType.Name)
                     : blockMenu.Title;
@@ -466,6 +476,127 @@ namespace ShaderFactory.CozyNodes.Runtime
             definition.InputLists.Add(inputList);
         }
 
+        private static void AddProvidedInputSetDefinition(
+            CozyNodeDefinition definition,
+            FieldInfo field,
+            ProvidedInputSetAttribute providedInputSetAttribute)
+        {
+            if (!field.FieldType.IsArray)
+            {
+                UnityEngine.Debug.LogError(
+                    $"Custom Cozy node '{definition.Title}' must declare provided input set " +
+                    $"'{field.Name}' as an array.");
+                return;
+            }
+
+            Type elementType = field.FieldType.GetElementType();
+            if (!IsSupportedPortValueType(elementType))
+            {
+                UnityEngine.Debug.LogError(
+                    $"Custom Cozy node '{definition.Title}' has an unsupported provided input set " +
+                    $"element type '{elementType?.Name}' on '{field.Name}'.");
+                return;
+            }
+
+            Type providerType = providedInputSetAttribute.ProviderType;
+            if (providerType == null || providerType.IsAbstract ||
+                !typeof(ICozyInputSetProvider).IsAssignableFrom(providerType))
+            {
+                UnityEngine.Debug.LogError(
+                    $"Provided input set '{field.Name}' on '{definition.Title}' needs a concrete " +
+                    $"provider type that implements {nameof(ICozyInputSetProvider)}.");
+                return;
+            }
+
+            CozyProvidedInputSetDefinition inputSet = new CozyProvidedInputSetDefinition();
+            inputSet.Name = field.Name;
+            inputSet.DisplayName = string.IsNullOrWhiteSpace(providedInputSetAttribute.DisplayName)
+                ? HumanizeName(field.Name)
+                : providedInputSetAttribute.DisplayName;
+            inputSet.Tooltip = providedInputSetAttribute.Tooltip;
+            inputSet.ElementType = elementType;
+            inputSet.ProviderType = providerType;
+
+            CozyTextAreaAttribute textAreaAttribute = field.GetCustomAttribute<CozyTextAreaAttribute>(true);
+            if (textAreaAttribute != null && elementType == typeof(string))
+            {
+                inputSet.IsTextArea = true;
+                inputSet.MinTextAreaLines = textAreaAttribute.MinLines;
+                inputSet.MaxTextAreaLines = textAreaAttribute.MaxLines;
+                inputSet.MinTextAreaWidth = Math.Max(0, textAreaAttribute.MinimumWidth);
+            }
+
+            definition.ProvidedInputSets.Add(inputSet);
+        }
+
+        /// <summary>
+        /// Asks a provided input set's provider for its current entries. Empty and
+        /// repeated keys are dropped so they can never produce ambiguous ports.
+        /// The provider is created for each call: entries usually mirror project
+        /// settings that may change while the Editor is open.
+        /// </summary>
+        public static List<CozyProvidedInput> GetProvidedInputs(CozyProvidedInputSetDefinition inputSet)
+        {
+            List<CozyProvidedInput> inputs = new List<CozyProvidedInput>();
+            if (inputSet?.ProviderType == null)
+                return inputs;
+
+            IReadOnlyList<CozyProvidedInput> providedInputs;
+            try
+            {
+                ICozyInputSetProvider provider =
+                    (ICozyInputSetProvider)Activator.CreateInstance(inputSet.ProviderType);
+                providedInputs = provider.GetInputs();
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogError(
+                    $"Provider '{inputSet.ProviderType.FullName}' for input set '{inputSet.Name}' failed.\n" +
+                    exception.Message);
+                return inputs;
+            }
+
+            if (providedInputs == null)
+                return inputs;
+
+            HashSet<string> seenKeys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (CozyProvidedInput providedInput in providedInputs)
+            {
+                if (string.IsNullOrWhiteSpace(providedInput.Key) || !seenKeys.Add(providedInput.Key))
+                    continue;
+
+                inputs.Add(providedInput);
+            }
+
+            return inputs;
+        }
+
+        /// <summary>
+        /// Generates the stable port name for one provided input. A different
+        /// separator from input lists ("__") keeps the two naming schemes apart.
+        /// </summary>
+        public static string GetProvidedInputPortName(string inputSetName, string key)
+        {
+            return inputSetName + "::" + key;
+        }
+
+        /// <summary>
+        /// Tests whether a port belongs to a provided input set and returns its key.
+        /// </summary>
+        public static bool TryGetProvidedInputKey(string inputSetName, string portName, out string key)
+        {
+            key = null;
+            if (string.IsNullOrWhiteSpace(inputSetName) || string.IsNullOrWhiteSpace(portName))
+                return false;
+
+            string prefix = inputSetName + "::";
+            if (!portName.StartsWith(prefix, StringComparison.Ordinal) || portName.Length == prefix.Length)
+                return false;
+
+            key = portName.Substring(prefix.Length);
+            return true;
+        }
+
         private static void ValidateInputListDefinitions(CozyNodeDefinition definition)
         {
             foreach (CozyInputListDefinition inputList in definition.InputLists)
@@ -515,7 +646,8 @@ namespace ShaderFactory.CozyNodes.Runtime
         {
             return valueType == typeof(string) || valueType == typeof(int) ||
                    valueType == typeof(float) || valueType == typeof(bool) ||
-                   (valueType != null && valueType.IsEnum);
+                   (valueType != null &&
+                    (valueType.IsEnum || typeof(UnityEngine.Object).IsAssignableFrom(valueType)));
         }
 
         /// <summary>
@@ -562,15 +694,28 @@ namespace ShaderFactory.CozyNodes.Runtime
         private static void AddFlowPorts(Type nodeType, CozyNodeDefinition definition)
         {
             bool isTerminal = nodeType.GetCustomAttribute<CozyFlowTerminalAttribute>(true) != null;
+            bool isBlock = typeof(CozyBlock).IsAssignableFrom(nodeType);
             object[] flowInputs =
                 nodeType.GetCustomAttributes(typeof(FlowInputAttribute), true);
             object[] flowOutputs =
                 nodeType.GetCustomAttributes(typeof(FlowOutputAttribute), true);
 
-            foreach (FlowInputAttribute flowInput in flowInputs)
+            // A context owns and invokes its blocks in displayed order. A block
+            // therefore cannot be entered through an independent flow input;
+            // its flow outputs are context exits chosen by Execute instead.
+            if (isBlock && flowInputs.Length > 0)
             {
-                if (!string.IsNullOrWhiteSpace(flowInput.PortName))
-                    definition.FlowInputs.Add(flowInput.PortName);
+                Debug.LogError(
+                    $"Cozy block '{definition.Title}' declares [FlowInput], but blocks are " +
+                    "entered by their owning context. Use [FlowOutput] to declare context exits.");
+            }
+            else
+            {
+                foreach (FlowInputAttribute flowInput in flowInputs)
+                {
+                    if (!string.IsNullOrWhiteSpace(flowInput.PortName))
+                        definition.FlowInputs.Add(flowInput.PortName);
+                }
             }
 
             foreach (FlowOutputAttribute flowOutput in flowOutputs)
@@ -631,7 +776,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// <summary>
     /// Cached description of a custom Cozy node class.
     /// </summary>
-    public sealed class CozyNodeDefinition
+    internal sealed class CozyNodeDefinition
     {
         public Type NodeType;
         public string TypeName;
@@ -652,6 +797,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         public readonly List<CozyPortDefinition> Outputs = new List<CozyPortDefinition>();
         public readonly List<CozyOptionDefinition> Options = new List<CozyOptionDefinition>();
         public readonly List<CozyInputListDefinition> InputLists = new List<CozyInputListDefinition>();
+        public readonly List<CozyProvidedInputSetDefinition> ProvidedInputSets = new List<CozyProvidedInputSetDefinition>();
         public readonly List<string> FlowInputs = new List<string>();
         public readonly List<string> FlowOutputs = new List<string>();
 
@@ -681,7 +827,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// <summary>
     /// Cached entry metadata declared by <see cref="CozyGraphEntryAttribute"/>.
     /// </summary>
-    public sealed class CozyGraphEntryDefinition
+    internal sealed class CozyGraphEntryDefinition
     {
         public CozyGraphEntryKind Kind;
         public string Name;
@@ -692,7 +838,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// <summary>
     /// Describes one reflected value port.
     /// </summary>
-    public sealed class CozyPortDefinition
+    internal sealed class CozyPortDefinition
     {
         public string Name;
         public string DisplayName;
@@ -713,7 +859,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// <summary>
     /// Describes one node option declared by a game-authored CozyNode.
     /// </summary>
-    public sealed class CozyOptionDefinition
+    internal sealed class CozyOptionDefinition
     {
         public string Name;
         public string DisplayName;
@@ -725,7 +871,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// <summary>
     /// Describes a repeated group of typed input ports controlled by an int option.
     /// </summary>
-    public sealed class CozyInputListDefinition
+    internal sealed class CozyInputListDefinition
     {
         public string Name;
         public string DisplayName;
@@ -751,9 +897,25 @@ namespace ShaderFactory.CozyNodes.Runtime
     }
 
     /// <summary>
+    /// Describes a group of typed input ports whose entries come from a provider.
+    /// </summary>
+    internal sealed class CozyProvidedInputSetDefinition
+    {
+        public string Name;
+        public string DisplayName;
+        public string Tooltip;
+        public Type ElementType;
+        public Type ProviderType;
+        public bool IsTextArea;
+        public int MinTextAreaLines;
+        public int MaxTextAreaLines;
+        public int MinTextAreaWidth;
+    }
+
+    /// <summary>
     /// A named type variable shared by several ports on one Cozy node.
     /// </summary>
-    public sealed class CozyTypeParameterDefinition
+    internal sealed class CozyTypeParameterDefinition
     {
         public string Name;
         public string DisplayName;

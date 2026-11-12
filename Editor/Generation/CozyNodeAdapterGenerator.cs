@@ -350,6 +350,9 @@ namespace ShaderFactory.CozyNodes.Editor
             }
 
             string className = "CozyBlockAdapter_" + GetStableIdentifier(blockType);
+            string category = string.IsNullOrWhiteSpace(definition.Category)
+                ? "Blocks"
+                : "Blocks/" + definition.Category;
             string iconPath = string.IsNullOrWhiteSpace(definition.IconAssetPath)
                 ? "null"
                 : "\"" + EscapeString(definition.IconAssetPath) + "\"";
@@ -367,7 +370,7 @@ namespace ShaderFactory.CozyNodes.Editor
             source.AppendLine("    [Serializable]");
             source.AppendLine("    [UseWithContext(" + contexts + ")]");
             source.AppendLine(
-                "    [Node(\"Blocks\", " + iconPath + ", \"" +
+                "    [Node(\"" + EscapeString(category) + "\", " + iconPath + ", \"" +
                 EscapeString(definition.Title) + "\")]");
             source.AppendLine("    public sealed class " + className + " : CustomCozyBlock");
             source.AppendLine("    {");
@@ -489,6 +492,15 @@ namespace ShaderFactory.CozyNodes.Editor
                 // outputs are separate Graph Toolkit containers, so sizing the
                 // input container gives text room without stretching outputs.
                 style.AppendLine(".ge-in-out-port-container-part #inputs");
+                style.AppendLine("{");
+                style.AppendLine("    min-width: " + definition.MinimumWidth + "px;");
+                style.AppendLine("}");
+
+                // CozyNodeWidth means the node itself has this minimum width.
+                // This also covers Options, which are not part of Graph
+                // Toolkit's input-port container.
+                style.AppendLine();
+                style.AppendLine(".ge-node");
                 style.AppendLine("{");
                 style.AppendLine("    min-width: " + definition.MinimumWidth + "px;");
                 style.AppendLine("}");

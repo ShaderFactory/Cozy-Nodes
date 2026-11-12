@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace ShaderFactory.CozyNodes.Runtime
 {
-    [CozyNodeMenu("Utilities/String", "String Format")]
+    [CozyNodeMenu("Utilities/String", "String Format", Tooltip = "Replaces {0}, {1}... in Format with the arguments, in order.")]
     [CozyNodeWidth(270)]
     public class StringFormatNode : CozyStringNode
     {

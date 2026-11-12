@@ -1,6 +1,6 @@
 namespace ShaderFactory.CozyNodes.Runtime
 {
-    [CozyNodeMenu("Utilities/String", "String To Lower")]
+    [CozyNodeMenu("Utilities/String", "String To Lower", Tooltip = "Text in lowercase.")]
     public class StringToLowerNode : CozyStringNode
     {
         [Input]

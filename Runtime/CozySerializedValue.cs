@@ -8,7 +8,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// elements, matching Cozy Nodes' deliberate one-dimensional-array limit.
     /// </summary>
     [Serializable]
-    public sealed class CozySerializedValue : CozySerializedScalarValue
+    internal sealed class CozySerializedValue : CozySerializedScalarValue
     {
         public List<CozySerializedScalarValue> ArrayElements = new();
 
@@ -35,7 +35,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// treating the supported one-dimensional arrays as an arbitrary object graph.
     /// </summary>
     [Serializable]
-    public class CozySerializedScalarValue
+    internal class CozySerializedScalarValue
     {
         public string StringValue;
         public float FloatValue;

@@ -1,6 +1,6 @@
 namespace ShaderFactory.CozyNodes.Runtime
 {
-    [CozyNodeMenu("Utilities/String", "String Replace")]
+    [CozyNodeMenu("Utilities/String", "String Replace", Tooltip = "Replaces every occurrence of Old Value in Text with New Value. Case-sensitive.")]
     public class StringReplaceNode : CozyStringNode
     {
         [Input]

@@ -7,12 +7,12 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// Reaching it resumes the caller through the gateway's matching output.
     /// </summary>
     [Serializable]
-    public sealed class RuntimeCozySubgraphExitNode : RuntimeCozyNode
+    internal sealed class RuntimeCozySubgraphExitNode : RuntimeCozyNode
     {
         public string ParentFlowOutputName;
 
         public override CozyNodeExecutionResult Run(
-            CozyManager cozyManager,
+            CozyGraphSession session,
             string enteredFlowInputName)
         {
             return CozyNodeExecutionResult.ReturnFromSubgraph(ParentFlowOutputName);

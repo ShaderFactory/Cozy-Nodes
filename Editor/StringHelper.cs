@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace ShaderFactory.CozyNodes.Editor
 {
-    public static class StringHelper
+    internal static class StringHelper
     {
         public static string RemoveHierarchyFromClassName(string _text)
         {

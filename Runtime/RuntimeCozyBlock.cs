@@ -8,9 +8,9 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// the surrounding graph.
     /// </summary>
     [Serializable]
-    public sealed class RuntimeCozyBlock : RuntimeCozyAuthoredElement
+    internal sealed class RuntimeCozyBlock : RuntimeCozyAuthoredElement
     {
-        public override object GetValue(CozyRuntimePort port, CozyManager cozyManager)
+        public override object GetValue(CozyRuntimePort port, CozyGraphSession session)
         {
             if (port == null)
                 return null;
@@ -18,39 +18,39 @@ namespace ShaderFactory.CozyNodes.Runtime
             // Input values are stored in the imported graph. Only authored
             // outputs are calculated by the game block itself.
             if (!OutputPorts.Contains(port))
-                return base.GetValue(port, cozyManager);
+                return base.GetValue(port, session);
 
-            CozyBlock block = GetBlock(cozyManager);
+            CozyBlock block = GetBlock(session);
             if (block == null)
-                return base.GetValue(port, cozyManager);
+                return base.GetValue(port, session);
 
-            CozyBlockContext context = new CozyBlockContext(this, cozyManager);
+            CozyBlockContext context = new CozyBlockContext(this, session);
             return CozyValueTypeRegistry.CloneForRuntime(
                 block.GetValue(context, port.Key));
         }
 
-        public CozyBlockExecutionResult Execute(CozyManager cozyManager)
+        public CozyBlockExecutionResult Execute(CozyGraphSession session)
         {
-            CozyBlock block = GetBlock(cozyManager);
+            CozyBlock block = GetBlock(session);
             if (block == null)
             {
                 return CozyBlockExecutionResult.Fail(
                     $"Could not create custom Cozy block '{AuthoredTypeName}'.");
             }
 
-            return block.Execute(new CozyBlockContext(this, cozyManager));
+            return block.Execute(new CozyBlockContext(this, session));
         }
 
-        private CozyBlock GetBlock(CozyManager cozyManager)
+        private CozyBlock GetBlock(CozyGraphSession session)
         {
-            if (cozyManager == null)
+            if (session == null)
                 return null;
 
             Type blockType = CozyNodeReflection.FindBlockType(AuthoredTypeName);
             if (blockType == null)
                 return null;
 
-            return cozyManager.GetOrCreateBlock(this, blockType);
+            return session.GetOrCreateBlock(this, blockType);
         }
     }
 }

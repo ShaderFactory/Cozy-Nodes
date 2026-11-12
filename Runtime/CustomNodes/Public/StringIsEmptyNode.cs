@@ -1,6 +1,6 @@
 namespace ShaderFactory.CozyNodes.Runtime
 {
-    [CozyNodeMenu("Utilities/String", "String Is Empty")]
+    [CozyNodeMenu("Utilities/String", "String Is Empty", Tooltip = "True when Text has no characters.")]
     public class StringIsEmptyNode : CozyStringNode
     {
         [Input]

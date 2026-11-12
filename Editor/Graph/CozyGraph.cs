@@ -76,7 +76,7 @@ namespace ShaderFactory.CozyNodes.Editor
                 if (startNode == null)
                 {
                     Debug.LogError(
-                        "Cozy Nodes could not create the starter On Start node. " +
+                        "Cozy Nodes could not create the starter On Graph Start node. " +
                         "Wait for Cozy Nodes to finish generating its adapters, then create a new graph.");
                     return;
                 }

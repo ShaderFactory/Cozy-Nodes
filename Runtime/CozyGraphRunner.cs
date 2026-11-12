@@ -5,64 +5,99 @@ using UnityEngine;
 namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
-    /// Runs one RuntimeCozyGraph. CozyManager handles Unity setup and public API;
-    /// this class handles node lookup, flow traversal, waiting and triggers.
+    /// Schedules one primary flow and zero or more event flows for a graph
+    /// scope. The primary flow owns normal graph progression; On Event entries
+    /// are independent reactions that share that scope's Blackboard.
     /// </summary>
-    public class CozyGraphRunner
+    internal sealed class CozyGraphRunner
     {
-        /// <summary>
-        /// Raised immediately before a flow node executes. The runner has no
-        /// Editor dependency; consumers can use the stable runtime node ID for
-        /// diagnostics or Editor-only execution visualization.
-        /// </summary>
-        public event Action<RuntimeCozyNode> FlowNodeExecuting;
+        internal event Action<RuntimeCozyNode> FlowNodeExecuting;
 
-        private readonly CozyManager cozyManager;
-        private CozyExecutionFrame rootFrame;
-        private CozyExecutionFrame activeFrame;
-        private readonly Stack<CozyExecutionFrame> suspendedFrames =
-            new Stack<CozyExecutionFrame>();
-        private bool isRunning;
+        private readonly CozyGraphSession session;
+        private readonly List<CozyGraphScope> activeScopes =
+            new List<CozyGraphScope>();
+        private readonly List<CozyExecutionFlow> activeFlows =
+            new List<CozyExecutionFlow>();
 
-        public CozyGraphRunner(CozyManager manager)
+        private CozyGraphScope rootScope;
+        private bool isCompleted;
+
+        internal CozyGraphRunner(CozyGraphSession session)
         {
-            cozyManager = manager;
+            this.session = session;
         }
 
         /// <summary>
-        /// Validates the graph and builds its lookup table. Starting an entry is
-        /// deliberately separate so CozyManager can choose the lifecycle entry
-        /// and game code can later run a named On Event entry.
+        /// Creates the root Blackboard scope. Starting an entry is separate so
+        /// callers can decide whether to run On Graph Start, On Update, or a
+        /// named On Event entry.
         /// </summary>
-        public bool Initialize(RuntimeCozyGraph graph)
+        internal bool Initialize(RuntimeCozyGraph graph)
         {
             StopGraph();
+            activeScopes.Clear();
 
             if (graph == null)
             {
-                Debug.LogWarning("Please assign a Graph to the Cozy Manager.");
+                Debug.LogWarning("Cannot start a CozyGraphSession without a graph.");
                 return false;
             }
 
-            rootFrame = new CozyExecutionFrame(graph, cozyManager.RuntimeVariables);
-            ActivateFrame(rootFrame);
+            rootScope = new CozyGraphScope(
+                graph,
+                new CozyRuntimeVariables(graph.VariableDefinitions));
+            activeScopes.Add(rootScope);
+            isCompleted = false;
+            RestoreDefaultScope();
             return true;
         }
 
         /// <summary>
-        /// Runs the graph's automatic On Start entry, when it has one.
-        /// A graph that only contains On Event entries is valid and stays idle.
+        /// Starts the root graph's one primary flow. That flow is the only root
+        /// path that represents normal graph progression.
         /// </summary>
-        public bool RunOnStart()
+        internal bool RunOnStart()
         {
-            return RunEntry(CozyGraphEntryKind.OnStart, null, false);
+            isCompleted = false;
+            bool started = StartPrimaryEntry(rootScope, CozyGraphEntryKind.OnStart);
+            RestoreDefaultScope();
+            return started;
+        }
+
+        internal bool RunOnUpdate()
+        {
+            if (isCompleted)
+                return false;
+
+            bool started = StartAuxiliaryEntry(
+                rootScope,
+                CozyGraphEntryKind.OnUpdate,
+                null,
+                false);
+            RestoreDefaultScope();
+            return started;
+        }
+
+        internal bool RunOnLateUpdate()
+        {
+            if (isCompleted)
+                return false;
+
+            bool started = StartAuxiliaryEntry(
+                rootScope,
+                CozyGraphEntryKind.OnLateUpdate,
+                null,
+                false);
+            RestoreDefaultScope();
+            return started;
         }
 
         /// <summary>
-        /// Starts one named On Event entry. This is an external graph start,
-        /// unlike a Wait For Event node, which resumes an already-running flow.
+        /// Starts a named root On Event entry. This is useful when code already
+        /// owns a session; global signals use <see cref="DispatchEvent"/> so
+        /// active child scopes can react too.
         /// </summary>
-        public bool RunCustomEvent(string eventName)
+        internal bool RunCustomEvent(string eventName)
         {
             if (string.IsNullOrWhiteSpace(eventName))
             {
@@ -70,29 +105,179 @@ namespace ShaderFactory.CozyNodes.Runtime
                 return false;
             }
 
-            return RunEntry(CozyGraphEntryKind.CustomEvent, eventName, true);
+            isCompleted = false;
+            bool started = StartAuxiliaryEntry(
+                rootScope,
+                CozyGraphEntryKind.CustomEvent,
+                eventName,
+                true);
+            RestoreDefaultScope();
+            return started;
         }
 
-        private bool RunEntry(
+        /// <summary>
+        /// Delivers a named event to this session. Matching Wait For Event nodes
+        /// resume, and matching On Event entries start in every live graph scope.
+        /// The same On Event entry never starts twice while its prior invocation
+        /// is active or waiting.
+        /// </summary>
+        internal void DispatchEvent(string eventName)
+        {
+            if (string.IsNullOrWhiteSpace(eventName))
+            {
+                Debug.LogWarning("A Cozy graph event needs a name.");
+                return;
+            }
+
+            if (isCompleted)
+                return;
+
+            TriggerInternal(eventName);
+
+            List<CozyGraphScope> scopes =
+                new List<CozyGraphScope>(activeScopes);
+            foreach (CozyGraphScope scope in scopes)
+            {
+                if (!IsScopeActive(scope))
+                    continue;
+
+                StartAuxiliaryEntry(
+                    scope,
+                    CozyGraphEntryKind.CustomEvent,
+                    eventName,
+                    false);
+            }
+
+            RestoreDefaultScope();
+        }
+
+        /// <summary>
+        /// Resumes every matching Wait For Event node in this session. Unlike
+        /// <see cref="DispatchEvent"/>, this does not start On Event entries.
+        /// </summary>
+        internal void Trigger(string triggerName)
+        {
+            if (isCompleted)
+                return;
+
+            TriggerInternal(triggerName);
+            RestoreDefaultScope();
+        }
+
+        private void TriggerInternal(string triggerName)
+        {
+            if (string.IsNullOrWhiteSpace(triggerName))
+                return;
+
+            List<CozyExecutionFlow> flows =
+                new List<CozyExecutionFlow>(activeFlows);
+            foreach (CozyExecutionFlow flow in flows)
+            {
+                if (!IsFlowActive(flow) || flow.IsSuspended)
+                    continue;
+
+                CozyExecutionFrame frame = flow.ActiveFrame;
+                if (!frame.IsWaiting || frame.CurrentNode == null ||
+                    frame.CurrentNode is not ICozyTriggerListener triggerListener)
+                    continue;
+
+                ActivateFlow(flow);
+                if (!triggerListener.TryReceiveTrigger(triggerName, session))
+                    continue;
+
+                frame.IsWaiting = false;
+                RunFlow(flow);
+            }
+        }
+
+        /// <summary>
+        /// Advances all timed waits. Each flow owns its own timer, so a delayed
+        /// event handler never pauses the primary flow or another event handler.
+        /// </summary>
+        internal void Update(float deltaTime)
+        {
+            List<CozyExecutionFlow> flows =
+                new List<CozyExecutionFlow>(activeFlows);
+            foreach (CozyExecutionFlow flow in flows)
+            {
+                if (!IsFlowActive(flow) || flow.IsSuspended)
+                    continue;
+
+                CozyExecutionFrame frame = flow.ActiveFrame;
+                if (!frame.IsWaiting || frame.RemainingWaitSeconds < 0f)
+                    continue;
+
+                frame.RemainingWaitSeconds -= Math.Max(0f, deltaTime);
+                if (frame.RemainingWaitSeconds > 0f)
+                    continue;
+
+                string outputPortName = frame.TimedWaitOutputPortName;
+                frame.RemainingWaitSeconds = -1f;
+                frame.TimedWaitOutputPortName = null;
+                frame.IsWaiting = false;
+
+                if (string.IsNullOrEmpty(outputPortName))
+                {
+                    Debug.LogError("Timed wait did not choose a flow output.");
+                    StopGraph();
+                    break;
+                }
+
+                ActivateFlow(flow);
+                if (TryAdvanceFlow(flow, CozyNodeExecutionResult.ContinueWith(outputPortName)))
+                    RunFlow(flow);
+            }
+
+            RestoreDefaultScope();
+        }
+
+        private bool StartPrimaryEntry(
+            CozyGraphScope scope,
+            CozyGraphEntryKind kind)
+        {
+            if (!IsScopeActive(scope) || scope.PrimaryFlow != null)
+                return false;
+
+            if (!TryGetEntry(scope, kind, null, false, out RuntimeCozyGraphEntry entry))
+                return false;
+
+            return StartFlow(scope, entry, GetEntryKey(kind, null, entry), true);
+        }
+
+        private bool StartAuxiliaryEntry(
+            CozyGraphScope scope,
             CozyGraphEntryKind kind,
             string entryName,
             bool reportMissingEntry)
         {
-            if (rootFrame?.Graph == null)
+            if (!IsScopeActive(scope))
+                return false;
+
+            if (!TryGetEntry(scope, kind, entryName, reportMissingEntry, out RuntimeCozyGraphEntry entry))
+                return false;
+
+            string entryKey = GetEntryKey(kind, entryName, entry);
+            if (FindActiveFlow(scope, entryKey) != null)
+                return false;
+
+            return StartFlow(scope, entry, entryKey, false);
+        }
+
+        private bool TryGetEntry(
+            CozyGraphScope scope,
+            CozyGraphEntryKind kind,
+            string entryName,
+            bool reportMissingEntry,
+            out RuntimeCozyGraphEntry entry)
+        {
+            entry = null;
+            if (scope?.Graph == null)
             {
                 Debug.LogWarning("Cozy Graph has not been initialized.");
                 return false;
             }
 
-            if (isRunning)
-            {
-                Debug.LogWarning(
-                    "Cozy Graph is already running. A CozyManager currently runs one " +
-                    "flow at a time, so the requested entry was not started.");
-                return false;
-            }
-
-            if (!rootFrame.Graph.TryGetEntry(kind, entryName, out RuntimeCozyGraphEntry entry))
+            if (!scope.Graph.TryGetEntry(kind, entryName, out entry))
             {
                 if (reportMissingEntry)
                     Debug.LogWarning($"On Event '{entryName}' was not found in this graph.");
@@ -100,113 +285,78 @@ namespace ShaderFactory.CozyNodes.Runtime
                 return false;
             }
 
-            return StartGraph(entry.TargetNodeID, entry.TargetInputPortName);
-        }
-
-        /// <summary>
-        /// Starts execution at a runtime node. The loop is iterative so long graphs
-        /// do not grow the C# call stack one node at a time.
-        /// </summary>
-        private bool StartGraph(string entryNodeID, string entryInputPortName)
-        {
-            if (rootFrame == null ||
-                !rootFrame.NodeLookup.TryGetValue(entryNodeID, out RuntimeCozyNode entryNode))
+            if (string.IsNullOrEmpty(entry.TargetNodeID) ||
+                !scope.NodeLookup.TryGetValue(entry.TargetNodeID, out _))
             {
-                Debug.LogWarning("Entry node was not found: " + entryNodeID);
+                Debug.LogWarning("Entry node was not found: " + entry.TargetNodeID);
                 return false;
             }
 
-            isRunning = true;
-            suspendedFrames.Clear();
-            ActivateFrame(rootFrame);
-            rootFrame.ResetFlowState();
-            rootFrame.CurrentNode = entryNode;
-            rootFrame.EnteredFlowInputName = string.IsNullOrWhiteSpace(entryInputPortName)
-                ? "in"
-                : entryInputPortName;
-            RunUntilPauseOrEnd();
+            return true;
+        }
+
+        private bool StartFlow(
+            CozyGraphScope scope,
+            RuntimeCozyGraphEntry entry,
+            string entryKey,
+            bool isPrimary)
+        {
+            if (!scope.NodeLookup.TryGetValue(entry.TargetNodeID, out RuntimeCozyNode entryNode))
+                return false;
+
+            CozyExecutionFlow flow = new CozyExecutionFlow(
+                scope,
+                entryNode,
+                entry.TargetInputPortName,
+                entryKey);
+            activeFlows.Add(flow);
+
+            if (isPrimary)
+                scope.PrimaryFlow = flow;
+
+            RunFlow(flow);
             return true;
         }
 
         /// <summary>
-        /// Sends a trigger only to the flow node currently waiting in this runner.
-        /// A non-matching trigger is ignored and leaves the graph paused.
+        /// Iteratively runs one flow until it waits, starts a child graph, or
+        /// ends. The loop avoids growing the C# stack for an ordinary long
+        /// sequence of graph nodes.
         /// </summary>
-        public void Trigger(string triggerName)
+        private void RunFlow(CozyExecutionFlow flow)
         {
-            if (!isRunning || activeFrame == null ||
-                !activeFrame.IsWaiting || activeFrame.CurrentNode == null)
-                return;
-
-            if (activeFrame.CurrentNode is not ICozyTriggerListener triggerListener)
-                return;
-
-            if (!triggerListener.TryReceiveTrigger(triggerName, cozyManager))
-                return;
-
-            activeFrame.IsWaiting = false;
-            RunUntilPauseOrEnd();
-        }
-
-        /// <summary>
-        /// Advances a timed graph pause using scaled game time. CozyManager calls
-        /// this from Update; a normal trigger wait is intentionally unaffected.
-        /// </summary>
-        public void Update(float deltaTime)
-        {
-            if (!isRunning || activeFrame == null ||
-                !activeFrame.IsWaiting || activeFrame.RemainingWaitSeconds < 0f)
-                return;
-
-            activeFrame.RemainingWaitSeconds -= Math.Max(0f, deltaTime);
-            if (activeFrame.RemainingWaitSeconds > 0f)
-                return;
-
-            string outputPortName = activeFrame.TimedWaitOutputPortName;
-            activeFrame.RemainingWaitSeconds = -1f;
-            activeFrame.TimedWaitOutputPortName = null;
-            activeFrame.IsWaiting = false;
-
-            if (string.IsNullOrEmpty(outputPortName))
+            while (IsFlowActive(flow) && !flow.IsSuspended)
             {
-                Debug.LogError("Timed wait did not choose a flow output.");
-                StopGraph();
-                return;
-            }
+                CozyExecutionFrame frame = flow.ActiveFrame;
+                if (frame.CurrentNode == null)
+                {
+                    EndFlow(flow);
+                    return;
+                }
 
-            if (TryAdvanceFlow(CozyNodeExecutionResult.ContinueWith(outputPortName)))
-                RunUntilPauseOrEnd();
-        }
+                ActivateFlow(flow);
+                FlowNodeExecuting?.Invoke(frame.CurrentNode);
+                CozyNodeExecutionResult result = frame.CurrentNode.Run(
+                    session,
+                    frame.EnteredFlowInputName);
 
-        private void RunUntilPauseOrEnd()
-        {
-            while (isRunning && activeFrame?.CurrentNode != null)
-            {
-                FlowNodeExecuting?.Invoke(activeFrame.CurrentNode);
-                CozyNodeExecutionResult result = activeFrame.CurrentNode.Run(
-                    cozyManager,
-                    activeFrame.EnteredFlowInputName);
                 if (result == null)
                 {
-                    Debug.LogError($"Node '{activeFrame.CurrentNode.NodeType}' returned no execution result.");
+                    Debug.LogError($"Node '{frame.CurrentNode.NodeType}' returned no execution result.");
                     StopGraph();
                     return;
                 }
 
                 if (result.ExecutionState == CozyNodeExecutionResult.State.EnterSubgraph)
                 {
-                    if (!TryEnterSubgraph(result))
-                        return;
-
-                    continue;
+                    TryEnterSubgraph(flow, result);
+                    return;
                 }
 
                 if (result.ExecutionState == CozyNodeExecutionResult.State.ReturnFromSubgraph)
                 {
-                    if (!TryReturnFromSubgraph(result))
-                        return;
-
-                    continue;
+                    TryReturnFromSubgraph(flow, result);
+                    return;
                 }
 
                 if (result.ExecutionState == CozyNodeExecutionResult.State.Waiting)
@@ -216,16 +366,16 @@ namespace ShaderFactory.CozyNodes.Runtime
                         if (string.IsNullOrEmpty(result.OutputPortName))
                         {
                             Debug.LogError(
-                                $"Node '{activeFrame.CurrentNode.NodeType}' started a timed wait without choosing a flow output.");
+                                $"Node '{frame.CurrentNode.NodeType}' started a timed wait without choosing a flow output.");
                             StopGraph();
                             return;
                         }
 
-                        activeFrame.RemainingWaitSeconds = result.WaitDurationSeconds;
-                        activeFrame.TimedWaitOutputPortName = result.OutputPortName;
+                        frame.RemainingWaitSeconds = result.WaitDurationSeconds;
+                        frame.TimedWaitOutputPortName = result.OutputPortName;
                     }
 
-                    activeFrame.IsWaiting = true;
+                    frame.IsWaiting = true;
                     return;
                 }
 
@@ -242,66 +392,69 @@ namespace ShaderFactory.CozyNodes.Runtime
                     return;
                 }
 
-                if (!TryAdvanceFlow(result))
+                if (!TryAdvanceFlow(flow, result))
                     return;
             }
         }
 
-        /// <summary>
-        /// Follows one flow result from the current node. Both immediate results
-        /// and a completed timed wait use this path, so their continuation and
-        /// loop-scope behavior cannot drift apart.
-        /// </summary>
-        private bool TryAdvanceFlow(CozyNodeExecutionResult result)
+        private bool TryAdvanceFlow(
+            CozyExecutionFlow flow,
+            CozyNodeExecutionResult result)
         {
+            CozyExecutionFrame frame = flow.ActiveFrame;
             bool isCall = result.ExecutionState == CozyNodeExecutionResult.State.Call;
             bool exitsScope = result.ExecutionState == CozyNodeExecutionResult.State.ExitScope;
 
-            if (exitsScope && !TryExitScope(activeFrame.CurrentNode))
+            if (exitsScope && !TryExitScope(frame, frame.CurrentNode))
             {
                 Debug.LogError(
-                    $"Node '{activeFrame.CurrentNode.NodeType}' tried to exit a flow scope that is not active.");
+                    $"Node '{frame.CurrentNode.NodeType}' tried to exit a flow scope that is not active.");
                 StopGraph();
                 return false;
             }
 
             if (string.IsNullOrEmpty(result.OutputPortName))
             {
-                Debug.LogError($"Node '{activeFrame.CurrentNode.NodeType}' continued without choosing a flow output.");
+                Debug.LogError($"Node '{frame.CurrentNode.NodeType}' continued without choosing a flow output.");
                 StopGraph();
                 return false;
             }
 
-            if (!activeFrame.CurrentNode.TryGetFlowOutput(
+            if (!frame.CurrentNode.TryGetFlowOutput(
                     result.OutputPortName,
                     out RuntimeFlowConnection flowConnection))
             {
                 if (isCall)
                 {
-                    // Calling an unconnected body is an immediate return to
-                    // the caller, which can advance to its next iteration.
-                    activeFrame.EnteredFlowInputName = null;
+                    frame.EnteredFlowInputName = null;
                     return true;
                 }
 
-                if (TryResumeContinuation())
+                if (TryResumeContinuation(frame))
                     return true;
 
-                if (suspendedFrames.Count > 0)
+                if (!flow.Scope.IsRoot && flow.Scope.PrimaryFlow == flow)
                 {
                     Debug.LogError(
-                        $"Child graph '{activeFrame.Graph.name}' ended without reaching a flow output gateway.");
+                        $"Child graph '{flow.Scope.Graph.name}' ended without reaching a flow output gateway.");
                     StopGraph();
                     return false;
                 }
 
-                // An unconnected flow output is a valid end to the root graph.
-                StopGraph();
+                if (flow.Scope.IsRoot && flow.Scope.PrimaryFlow == flow)
+                {
+                    StopGraph();
+                    return false;
+                }
+
+                // An unconnected output is a normal end for an auxiliary
+                // entry such as an On Event handler.
+                EndFlow(flow);
                 return false;
             }
 
-            RuntimeCozyNode callingNode = activeFrame.CurrentNode;
-            if (!activeFrame.NodeLookup.TryGetValue(flowConnection.NextNodeID, out RuntimeCozyNode nextNode))
+            RuntimeCozyNode callingNode = frame.CurrentNode;
+            if (!frame.NodeLookup.TryGetValue(flowConnection.NextNodeID, out RuntimeCozyNode nextNode))
             {
                 Debug.LogError($"Flow output '{result.OutputPortName}' points to a missing node.");
                 StopGraph();
@@ -309,68 +462,63 @@ namespace ShaderFactory.CozyNodes.Runtime
             }
 
             if (isCall)
-                activeFrame.ContinuationNodes.Push(callingNode);
+                frame.ContinuationNodes.Push(callingNode);
 
-            activeFrame.CurrentNode = nextNode;
-            activeFrame.EnteredFlowInputName = string.IsNullOrWhiteSpace(flowConnection.NextInputPortName)
+            frame.CurrentNode = nextNode;
+            frame.EnteredFlowInputName = string.IsNullOrWhiteSpace(flowConnection.NextInputPortName)
                 ? "in"
                 : flowConnection.NextInputPortName;
             return true;
         }
 
-        private bool TryResumeContinuation()
+        private static bool TryResumeContinuation(CozyExecutionFrame frame)
         {
-            if (activeFrame.ContinuationNodes.Count == 0)
+            if (frame.ContinuationNodes.Count == 0)
                 return false;
 
-            activeFrame.CurrentNode = activeFrame.ContinuationNodes.Pop();
-            activeFrame.EnteredFlowInputName = null;
+            frame.CurrentNode = frame.ContinuationNodes.Pop();
+            frame.EnteredFlowInputName = null;
             return true;
         }
 
-        /// <summary>
-        /// Suspends the caller at its subgraph node, then gives the child its own
-        /// node lookup, continuation stack and Blackboard value scope. The caller
-        /// remains untouched until a child exit gateway chooses its return path.
-        /// </summary>
-        private bool TryEnterSubgraph(CozyNodeExecutionResult result)
+        private bool TryEnterSubgraph(
+            CozyExecutionFlow parentFlow,
+            CozyNodeExecutionResult result)
         {
-            if (result.Subgraph == null)
+            if (result.Subgraph == null || string.IsNullOrEmpty(result.TargetNodeID))
             {
-                Debug.LogError("A subgraph call did not provide an imported child graph.");
+                Debug.LogError("A subgraph call did not provide a valid imported child entry.");
                 StopGraph();
                 return false;
             }
 
-            if (string.IsNullOrEmpty(result.TargetNodeID))
+            if (parentFlow.ActiveFrame.CurrentNode is not RuntimeCozySubgraphNode subgraphNode)
             {
-                Debug.LogError(
-                    $"Subgraph '{result.Subgraph.name}' has a flow input without a target node.");
+                Debug.LogError("A subgraph call did not originate from a RuntimeCozySubgraphNode.");
                 StopGraph();
                 return false;
             }
 
-            CozyExecutionFrame childFrame = new CozyExecutionFrame(
+            CozyRuntimeVariables childVariables =
+                new CozyRuntimeVariables(result.Subgraph.VariableDefinitions);
+            if (!subgraphNode.TryPopulateChildVariables(
+                    session,
+                    childVariables,
+                    out string dataInputError))
+            {
+                Debug.LogError(dataInputError);
+                StopGraph();
+                return false;
+            }
+
+            CozyGraphScope childScope = new CozyGraphScope(
                 result.Subgraph,
-                new CozyRuntimeVariables(result.Subgraph.VariableDefinitions));
-
-            string dataInputError = null;
-            if (activeFrame.CurrentNode is not RuntimeCozySubgraphNode subgraphNode ||
-                !subgraphNode.TryPopulateChildVariables(
-                    cozyManager,
-                    childFrame.Variables,
-                    out dataInputError))
-            {
-                Debug.LogError(
-                    dataInputError ??
-                    "A subgraph call did not originate from a RuntimeCozySubgraphNode.");
-                StopGraph();
-                return false;
-            }
-
-            if (!childFrame.NodeLookup.TryGetValue(
-                    result.TargetNodeID,
-                    out RuntimeCozyNode entryNode))
+                childVariables,
+                parentFlow.Scope,
+                parentFlow,
+                parentFlow.ActiveFrame,
+                subgraphNode);
+            if (!childScope.NodeLookup.TryGetValue(result.TargetNodeID, out RuntimeCozyNode entryNode))
             {
                 Debug.LogError(
                     $"Subgraph '{result.Subgraph.name}' points to a missing entry node.");
@@ -378,27 +526,39 @@ namespace ShaderFactory.CozyNodes.Runtime
                 return false;
             }
 
-            suspendedFrames.Push(activeFrame);
-            ActivateFrame(childFrame);
-            activeFrame.CurrentNode = entryNode;
-            activeFrame.EnteredFlowInputName = string.IsNullOrWhiteSpace(
-                result.TargetInputPortName)
-                ? "in"
-                : result.TargetInputPortName;
+            parentFlow.IsSuspended = true;
+            activeScopes.Add(childScope);
+
+            CozyExecutionFlow childPrimaryFlow = new CozyExecutionFlow(
+                childScope,
+                entryNode,
+                result.TargetInputPortName,
+                "Primary");
+            childScope.PrimaryFlow = childPrimaryFlow;
+            activeFlows.Add(childPrimaryFlow);
+            RunFlow(childPrimaryFlow);
             return true;
         }
 
-        /// <summary>
-        /// Restores the suspended caller and follows the flow output named by the
-        /// child gateway. This uses the same flow-resolution path as ordinary
-        /// nodes, so loops and unconnected outputs keep their normal behavior.
-        /// </summary>
-        private bool TryReturnFromSubgraph(CozyNodeExecutionResult result)
+        private bool TryReturnFromSubgraph(
+            CozyExecutionFlow flow,
+            CozyNodeExecutionResult result)
         {
-            if (suspendedFrames.Count == 0)
+            CozyGraphScope childScope = flow.Scope;
+            if (childScope.IsRoot || childScope.CallingFlow == null ||
+                childScope.CallingFrame == null || childScope.CallingNode == null)
             {
                 Debug.LogError("A subgraph flow output was reached without a calling graph.");
                 StopGraph();
+                return false;
+            }
+
+            if (childScope.PrimaryFlow != flow)
+            {
+                Debug.LogError(
+                    "An On Event flow reached a Subgraph output. Only the " +
+                    "subgraph's primary flow may return to its parent.");
+                EndFlow(flow);
                 return false;
             }
 
@@ -409,18 +569,18 @@ namespace ShaderFactory.CozyNodes.Runtime
                 return false;
             }
 
-            CozyExecutionFrame childFrame = activeFrame;
-            CozyExecutionFrame parentFrame = suspendedFrames.Peek();
-            if (parentFrame.CurrentNode is not RuntimeCozySubgraphNode subgraphNode)
+            CozyExecutionFlow parentFlow = childScope.CallingFlow;
+            if (!IsFlowActive(parentFlow) || !parentFlow.IsSuspended ||
+                parentFlow.ActiveFrame.CurrentNode != childScope.CallingNode)
             {
-                Debug.LogError("A subgraph returned to a caller that is not a subgraph node.");
+                Debug.LogError("A subgraph returned after its calling flow was no longer active.");
                 StopGraph();
                 return false;
             }
 
-            if (!subgraphNode.TryCollectChildOutputValues(
-                    cozyManager,
-                    childFrame.Variables,
+            if (!childScope.CallingNode.TryCollectChildOutputValues(
+                    session,
+                    childScope.Variables,
                     out Dictionary<string, object> outputValues,
                     out string dataOutputError))
             {
@@ -429,11 +589,25 @@ namespace ShaderFactory.CozyNodes.Runtime
                 return false;
             }
 
-            parentFrame.SetSubgraphOutputValues(subgraphNode, outputValues);
+            childScope.CallingFrame.SetSubgraphOutputValues(
+                childScope.CallingNode,
+                outputValues);
+            CancelScope(childScope);
 
-            CancelFrame(childFrame);
-            ActivateFrame(suspendedFrames.Pop());
-            return TryAdvanceFlow(CozyNodeExecutionResult.ContinueWith(result.OutputPortName));
+            parentFlow.IsSuspended = false;
+            if (!IsFlowActive(parentFlow))
+                return false;
+
+            ActivateFlow(parentFlow);
+            if (!TryAdvanceFlow(
+                    parentFlow,
+                    CozyNodeExecutionResult.ContinueWith(result.OutputPortName)))
+            {
+                return false;
+            }
+
+            RunFlow(parentFlow);
+            return true;
         }
 
         internal bool TryGetSubgraphOutputValue(
@@ -441,22 +615,25 @@ namespace ShaderFactory.CozyNodes.Runtime
             string outputPortName,
             out object value)
         {
-            if (activeFrame == null)
+            CozyExecutionFlow activeFlow = session.ActiveExecutionFlow;
+            if (activeFlow == null)
             {
                 value = null;
                 return false;
             }
 
-            return activeFrame.TryGetSubgraphOutputValue(
+            return activeFlow.ActiveFrame.TryGetSubgraphOutputValue(
                 subgraphNode,
                 outputPortName,
                 out value);
         }
 
-        private bool TryExitScope(RuntimeCozyNode scopeNode)
+        private bool TryExitScope(
+            CozyExecutionFrame frame,
+            RuntimeCozyNode scopeNode)
         {
             bool isActiveScope = false;
-            foreach (RuntimeCozyNode continuationNode in activeFrame.ContinuationNodes)
+            foreach (RuntimeCozyNode continuationNode in frame.ContinuationNodes)
             {
                 if (continuationNode == scopeNode)
                 {
@@ -468,10 +645,10 @@ namespace ShaderFactory.CozyNodes.Runtime
             if (!isActiveScope)
                 return false;
 
-            while (activeFrame.ContinuationNodes.Count > 0)
+            while (frame.ContinuationNodes.Count > 0)
             {
-                RuntimeCozyNode cancelledNode = activeFrame.ContinuationNodes.Pop();
-                cancelledNode?.CancelFlowScope(cozyManager);
+                RuntimeCozyNode cancelledNode = frame.ContinuationNodes.Pop();
+                cancelledNode?.CancelFlowScope(session);
 
                 if (cancelledNode == scopeNode)
                     return true;
@@ -480,38 +657,117 @@ namespace ShaderFactory.CozyNodes.Runtime
             return false;
         }
 
+        internal void Stop()
+        {
+            StopGraph();
+        }
+
         private void StopGraph()
         {
-            isRunning = false;
-            if (activeFrame == null)
-                return;
+            List<CozyExecutionFlow> flows =
+                new List<CozyExecutionFlow>(activeFlows);
+            foreach (CozyExecutionFlow flow in flows)
+                EndFlow(flow);
 
-            CancelFrame(activeFrame);
+            activeFlows.Clear();
+            activeScopes.Clear();
+            if (rootScope != null)
+            {
+                rootScope.PrimaryFlow = null;
+                activeScopes.Add(rootScope);
+            }
 
-            while (suspendedFrames.Count > 0)
-                CancelFrame(suspendedFrames.Pop());
-
-            if (rootFrame != null)
-                ActivateFrame(rootFrame);
+            isCompleted = true;
+            RestoreDefaultScope();
         }
 
-        private void ActivateFrame(CozyExecutionFrame frame)
+        private void CancelScope(CozyGraphScope scope)
         {
-            activeFrame = frame;
-            cozyManager.SetRuntimeVariables(frame?.Variables);
+            List<CozyExecutionFlow> flows = new List<CozyExecutionFlow>();
+            foreach (CozyExecutionFlow candidate in activeFlows)
+            {
+                if (IsInScopeTree(candidate.Scope, scope))
+                    flows.Add(candidate);
+            }
+
+            foreach (CozyExecutionFlow flow in flows)
+                EndFlow(flow);
+
+            activeScopes.RemoveAll(candidate => IsInScopeTree(candidate, scope));
         }
 
-        private void CancelFrame(CozyExecutionFrame frame)
+        private void EndFlow(CozyExecutionFlow flow)
         {
-            if (frame == null)
+            if (!IsFlowActive(flow))
                 return;
 
-            frame.CurrentNode?.CancelFlowScope(cozyManager);
+            ActivateFlow(flow);
+            CozyExecutionFrame frame = flow.ActiveFrame;
+            frame.CurrentNode?.CancelFlowScope(session);
 
             while (frame.ContinuationNodes.Count > 0)
-                frame.ContinuationNodes.Pop()?.CancelFlowScope(cozyManager);
+                frame.ContinuationNodes.Pop()?.CancelFlowScope(session);
 
             frame.ResetFlowState();
+            activeFlows.Remove(flow);
+            if (flow.Scope.PrimaryFlow == flow)
+                flow.Scope.PrimaryFlow = null;
+        }
+
+        private void ActivateFlow(CozyExecutionFlow flow)
+        {
+            session.ActivateExecutionFlow(flow);
+        }
+
+        private void RestoreDefaultScope()
+        {
+            session.ActivateExecutionFlow(null, rootScope?.Variables);
+        }
+
+        private bool IsScopeActive(CozyGraphScope scope)
+        {
+            return scope != null && activeScopes.Contains(scope);
+        }
+
+        private bool IsFlowActive(CozyExecutionFlow flow)
+        {
+            return flow != null && activeFlows.Contains(flow);
+        }
+
+        private CozyExecutionFlow FindActiveFlow(
+            CozyGraphScope scope,
+            string entryKey)
+        {
+            foreach (CozyExecutionFlow flow in activeFlows)
+            {
+                if (flow.Scope == scope && flow.EntryKey == entryKey)
+                    return flow;
+            }
+
+            return null;
+        }
+
+        private static bool IsInScopeTree(
+            CozyGraphScope candidate,
+            CozyGraphScope root)
+        {
+            for (CozyGraphScope scope = candidate; scope != null; scope = scope.ParentScope)
+            {
+                if (scope == root)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static string GetEntryKey(
+            CozyGraphEntryKind kind,
+            string entryName,
+            RuntimeCozyGraphEntry entry)
+        {
+            return kind + ":" + (entryName ?? string.Empty) + ":" +
+                   (entry?.TargetNodeID ?? string.Empty) + ":" +
+                   (entry?.TargetInputPortName ?? string.Empty);
         }
     }
 }

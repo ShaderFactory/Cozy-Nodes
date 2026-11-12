@@ -3,22 +3,20 @@ using System.Collections.Generic;
 namespace ShaderFactory.CozyNodes.Runtime
 {
     /// <summary>
-    /// Owns the mutable state for one active graph execution.
-    ///
-    /// A Cozy graph asset is an immutable imported template at runtime. Values
-    /// that change while it runs - the current node, its variable scope, waits,
-    /// and call continuations - live here instead. The root runner currently
-    /// creates one frame; nested graph calls can later create their own frames
-    /// without sharing any of that state.
+    /// Mutable traversal state for one execution flow. A scope owns the shared
+    /// graph and Blackboard; each simultaneously running flow owns its own
+    /// current node, waits, continuations, and returned subgraph values.
     /// </summary>
     internal sealed class CozyExecutionFrame
     {
-        internal RuntimeCozyGraph Graph { get; }
-        internal CozyRuntimeVariables Variables { get; }
-        internal Dictionary<string, RuntimeCozyNode> NodeLookup { get; } =
-            new Dictionary<string, RuntimeCozyNode>();
+        internal CozyGraphScope Scope { get; }
+        internal RuntimeCozyGraph Graph => Scope.Graph;
+        internal CozyRuntimeVariables Variables => Scope.Variables;
+        internal Dictionary<string, RuntimeCozyNode> NodeLookup => Scope.NodeLookup;
+
         internal Stack<RuntimeCozyNode> ContinuationNodes { get; } =
             new Stack<RuntimeCozyNode>();
+
         internal Dictionary<string, Dictionary<string, object>>
             SubgraphOutputValuesByNodeID { get; } =
                 new Dictionary<string, Dictionary<string, object>>();
@@ -29,19 +27,9 @@ namespace ShaderFactory.CozyNodes.Runtime
         internal float RemainingWaitSeconds { get; set; } = -1f;
         internal string TimedWaitOutputPortName { get; set; }
 
-        internal CozyExecutionFrame(RuntimeCozyGraph graph, CozyRuntimeVariables variables)
+        internal CozyExecutionFrame(CozyGraphScope scope)
         {
-            Graph = graph;
-            Variables = variables;
-
-            if (graph?.AllNodes == null)
-                return;
-
-            foreach (RuntimeCozyNode node in graph.AllNodes)
-            {
-                if (node != null && !string.IsNullOrWhiteSpace(node.NodeID))
-                    NodeLookup[node.NodeID] = node;
-            }
+            Scope = scope;
         }
 
         internal void ResetFlowState()
@@ -55,11 +43,6 @@ namespace ShaderFactory.CozyNodes.Runtime
             SubgraphOutputValuesByNodeID.Clear();
         }
 
-        /// <summary>
-        /// Keeps returned values on the calling execution frame rather than on
-        /// the imported node asset. A single asset can safely run in multiple
-        /// CozyManagers and can be called more than once in one execution.
-        /// </summary>
         internal void SetSubgraphOutputValues(
             RuntimeCozySubgraphNode subgraphNode,
             Dictionary<string, object> outputValues)

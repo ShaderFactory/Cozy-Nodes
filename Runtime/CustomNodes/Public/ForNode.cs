@@ -4,7 +4,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// Runs its Body once for each integer from Start through the value before
     /// End, advancing by Step. End is exclusive, matching a normal C# for loop.
     /// </summary>
-    [CozyNodeMenu("Control Flow", "For Loop")]
+    [CozyNodeMenu("Control Flow", "For Loop", Tooltip = "Runs Body once for each Index from Start up to, but not including, End. Then continues through Exit.")]
     [CozyNodeIcon("Packages/com.shaderfactory.cozynodes/Editor/Icons/ForLoop.png")]
     [FlowInput]
     [FlowInput("Break")]

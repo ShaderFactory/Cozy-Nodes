@@ -11,7 +11,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// It is also the version that evaluates ports and executes in-game runtime logic
     /// </summary>
     [Serializable]
-    public class RuntimeCozyNode 
+    internal class RuntimeCozyNode
     {
         /// <summary>
         /// Stable identifier copied from the Graph Toolkit editor node during import.
@@ -49,7 +49,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         #endregion
 
         /// <summary> Evaluate an output of a specific port. </summary>
-        public virtual object GetValue(CozyRuntimePort port, CozyManager cozyManager)
+        public virtual object GetValue(CozyRuntimePort port, CozyGraphSession session)
         {
             if (port == null)
             {
@@ -68,13 +68,13 @@ namespace ShaderFactory.CozyNodes.Runtime
                     return null;
                 }
 
-                if (cozyManager == null || cozyManager.RuntimeVariables == null)
+                if (session == null || session.RuntimeVariables == null)
                 {
-                    Debug.LogWarning($"Port '{port.Key}' tried to read a Blackboard variable without a running CozyManager.");
+                    Debug.LogWarning($"Port '{port.Key}' tried to read a Blackboard variable without a running CozyGraphSession.");
                     return null;
                 }
 
-                if (!cozyManager.RuntimeVariables.TryGetValue(port.variableReference.variableID, out object variableValue))
+                if (!session.RuntimeVariables.TryGetValue(port.variableReference.variableID, out object variableValue))
                 {
                     Debug.LogWarning($"Could not find Blackboard variable '{port.variableReference.variableID}'.");
                     return null;
@@ -104,7 +104,7 @@ namespace ShaderFactory.CozyNodes.Runtime
                 }
 
                 CozyRuntimePort sourcePort = sourceNode.GetPortByName(port.portReference.portName);
-                value = sourceNode.GetValue(sourcePort, cozyManager);
+                value = sourceNode.GetValue(sourcePort, session);
             }
 
             if (CozyValueConverter.TryConvert(value, port.GetValueType(), out object convertedValue))
@@ -118,10 +118,10 @@ namespace ShaderFactory.CozyNodes.Runtime
         }
 
         /// <summary> Gets and evaluates one of this node's input ports. </summary>
-        public object GetInputValue(string portName, CozyManager cozyManager)
+        public object GetInputValue(string portName, CozyGraphSession session)
         {
             CozyRuntimePort inputPort = GetPortByName(portName);
-            return GetValue(inputPort, cozyManager);
+            return GetValue(inputPort, session);
         }
 
         /// <summary>
@@ -129,7 +129,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// Each element still uses the standard recursive input resolver, so it can
         /// be a local value, Blackboard variable or another node's output.
         /// </summary>
-        public List<object> GetInputValues(string inputListName, CozyManager cozyManager)
+        public List<object> GetInputValues(string inputListName, CozyGraphSession session)
         {
             List<KeyValuePair<int, CozyRuntimePort>> indexedPorts =
                 new List<KeyValuePair<int, CozyRuntimePort>>();
@@ -149,7 +149,24 @@ namespace ShaderFactory.CozyNodes.Runtime
 
             List<object> values = new List<object>(indexedPorts.Count);
             foreach (KeyValuePair<int, CozyRuntimePort> indexedPort in indexedPorts)
-                values.Add(GetValue(indexedPort.Value, cozyManager));
+                values.Add(GetValue(indexedPort.Value, session));
+
+            return values;
+        }
+
+        /// <summary>
+        /// Gets every value of a provided input set, keyed by the provider's
+        /// stable key. Each value uses the standard recursive input resolver.
+        /// Only the ports present in the imported graph are returned.
+        /// </summary>
+        public Dictionary<string, object> GetProvidedInputValues(string inputSetName, CozyGraphSession session)
+        {
+            Dictionary<string, object> values = new Dictionary<string, object>(StringComparer.Ordinal);
+            foreach (CozyRuntimePort inputPort in InputPorts)
+            {
+                if (CozyNodeReflection.TryGetProvidedInputKey(inputSetName, inputPort.Key, out string key))
+                    values[key] = GetValue(inputPort, session);
+            }
 
             return values;
         }
@@ -188,27 +205,27 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// Existing nodes can keep overriding Run() when they do not need the runner.
         /// Nodes that need to communicate with the game can override this method.
         /// </summary>
-        public virtual CozyNodeExecutionResult Run(CozyManager cozyManager)
+        public virtual CozyNodeExecutionResult Run(CozyGraphSession session)
         {
             return Run();
         }
 
         /// <summary>
         /// Executes this node with the input port through which flow arrived.
-        /// Existing runtime nodes can keep overriding Run(CozyManager).
+        /// Existing runtime nodes can keep overriding Run(CozyGraphSession).
         /// </summary>
         public virtual CozyNodeExecutionResult Run(
-            CozyManager cozyManager,
+            CozyGraphSession session,
             string enteredFlowInputName)
         {
-            return Run(cozyManager);
+            return Run(session);
         }
 
         /// <summary>
         /// Clears temporary state when the runner discards this node's scoped
         /// continuation. Only scoped flow nodes need to override it.
         /// </summary>
-        public virtual void CancelFlowScope(CozyManager cozyManager)
+        public virtual void CancelFlowScope(CozyGraphSession session)
         {
         }
 

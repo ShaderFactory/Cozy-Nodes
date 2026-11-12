@@ -1,4 +1,5 @@
 using System;
+using UnityEngine;
 
 namespace ShaderFactory.CozyNodes.Runtime
 {
@@ -8,7 +9,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// receive values from other nodes.
     /// </summary>
     [Serializable]
-    public class RuntimeCozyNodeOption
+    internal class RuntimeCozyNodeOption
     {
         public string Key;
         public string ValueTypeName;
@@ -17,10 +18,17 @@ namespace ShaderFactory.CozyNodes.Runtime
         public int IntValue;
         public bool BoolValue;
         public string EnumValueName;
+        [SerializeField] private UnityEngine.Object objectValue;
 
         public void SetValue(object value, Type valueType)
         {
             ValueTypeName = valueType?.AssemblyQualifiedName;
+
+            if (valueType != null && typeof(UnityEngine.Object).IsAssignableFrom(valueType))
+            {
+                objectValue = value as UnityEngine.Object;
+                return;
+            }
 
             if (valueType != null && valueType.IsEnum)
             {
@@ -79,6 +87,9 @@ namespace ShaderFactory.CozyNodes.Runtime
 
             if (valueType == typeof(bool))
                 return BoolValue;
+
+            if (valueType != null && typeof(UnityEngine.Object).IsAssignableFrom(valueType))
+                return objectValue;
 
             if (valueType != null && valueType.IsEnum &&
                 !string.IsNullOrWhiteSpace(EnumValueName))

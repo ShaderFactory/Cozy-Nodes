@@ -4,7 +4,7 @@ using UnityEditor;
 using System.IO;
 using System.Diagnostics;
 
-public static class RuntimeGraphJsonDebug
+internal static class RuntimeGraphJsonDebug
 {
     public static void DumpToJsonAndOpen(object runtimeGraph)
     {

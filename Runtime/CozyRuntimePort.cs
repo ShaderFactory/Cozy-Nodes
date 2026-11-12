@@ -6,7 +6,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// Serializable port key/value pair with typed fields
     /// </summary>
     [Serializable]
-    public class CozyRuntimePort
+    internal class CozyRuntimePort
     {
         public string ImportMessage;
 
@@ -100,7 +100,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// The runtime resolves this reference only when a node asks for the input.
     /// </summary>
     [Serializable]
-    public class RuntimePortReference
+    internal class RuntimePortReference
     {
         public string nodeID;
         public string portName;
@@ -114,11 +114,11 @@ namespace ShaderFactory.CozyNodes.Runtime
 
     /// <summary>
     /// Identifies a Blackboard variable without storing its current value in the
-    /// imported graph asset. RuntimeCozyNode resolves this through the CozyManager
+    /// imported graph asset. RuntimeCozyNode resolves this through the CozyGraphSession
     /// that is currently running the graph.
     /// </summary>
     [Serializable]
-    public class RuntimeVariableReference
+    internal class RuntimeVariableReference
     {
         public string variableID;
 
@@ -129,7 +129,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     }
 
     [Serializable]
-    public class RuntimeIVariable
+    internal class RuntimeIVariable
     {
         public string nodeID;
         public string variableName;
@@ -142,7 +142,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     }
 
     [Serializable]
-    public class RuntimeIConstant
+    internal class RuntimeIConstant
     {
         public string nodeID;
         public string constantName;

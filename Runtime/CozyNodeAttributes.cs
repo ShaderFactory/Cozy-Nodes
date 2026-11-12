@@ -9,6 +9,8 @@ namespace ShaderFactory.CozyNodes.Runtime
     public enum CozyGraphEntryKind
     {
         OnStart,
+        OnUpdate,
+        OnLateUpdate,
         CustomEvent
     }
 
@@ -79,16 +81,25 @@ namespace ShaderFactory.CozyNodes.Runtime
     }
 
     /// <summary>
-    /// Labels a game-authored CozyBlock in a context's Add Block menu.
+    /// Places a game-authored CozyBlock in a context's Add Block menu. Blocks
+    /// can use the same category/title pattern as ordinary Cozy nodes, while
+    /// the one-argument form remains a concise title-only declaration.
     /// </summary>
     [AttributeUsage(AttributeTargets.Class, Inherited = false)]
     public sealed class CozyBlockMenuAttribute : Attribute
     {
+        public string Category { get; }
         public string Title { get; }
         public string Tooltip { get; set; }
 
         public CozyBlockMenuAttribute(string title = null)
         {
+            Title = title;
+        }
+
+        public CozyBlockMenuAttribute(string category, string title)
+        {
+            Category = category;
             Title = title;
         }
     }
@@ -143,7 +154,9 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// <summary>
     /// Makes a field into a node option. Options configure one node instance and
     /// are stored in the graph; they are not input ports and cannot be connected.
-    /// Cozy Nodes supports string, int, float, bool and enum option fields.
+    /// Cozy Nodes supports string, int, float, bool, enum, and
+    /// <see cref="UnityEngine.Object"/> option fields. Object options keep a
+    /// stable Unity asset reference in the imported runtime graph.
     /// </summary>
     [AttributeUsage(AttributeTargets.Field, Inherited = true)]
     public sealed class OptionAttribute : Attribute
@@ -175,6 +188,32 @@ namespace ShaderFactory.CozyNodes.Runtime
         public InputListAttribute(string countOptionName, string displayName = null)
         {
             CountOptionName = countOptionName;
+            DisplayName = displayName;
+        }
+    }
+
+    /// <summary>
+    /// Makes an array field into a set of value inputs whose entries come from a
+    /// provider class instead of a count. Use it when the inputs mirror data owned
+    /// by another system, such as one text input per project language.
+    ///
+    /// The provider must implement <see cref="ICozyInputSetProvider"/> and have a
+    /// public parameterless constructor. It is asked for its entries whenever the
+    /// node is defined in the Editor. Each entry's stable key becomes part of the
+    /// port name, so values and wires stay attached when entries are added,
+    /// removed or reordered. Read the values at runtime with
+    /// <see cref="CozyNodeContext.GetProvidedInputValues{T}"/>.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field, Inherited = true)]
+    public sealed class ProvidedInputSetAttribute : Attribute
+    {
+        public Type ProviderType { get; }
+        public string DisplayName { get; }
+        public string Tooltip { get; set; }
+
+        public ProvidedInputSetAttribute(Type providerType, string displayName = null)
+        {
+            ProviderType = providerType;
             DisplayName = displayName;
         }
     }

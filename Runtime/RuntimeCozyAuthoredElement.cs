@@ -9,7 +9,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// options remain independent from the game's concrete assembly.
     /// </summary>
     [Serializable]
-    public abstract class RuntimeCozyAuthoredElement : RuntimeCozyNode
+    internal abstract class RuntimeCozyAuthoredElement : RuntimeCozyNode
     {
         public string AuthoredTypeName;
         public string DisplayName;

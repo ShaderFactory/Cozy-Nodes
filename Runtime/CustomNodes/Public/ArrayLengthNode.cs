@@ -3,7 +3,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// <summary>
     /// Returns the number of elements in a selected T[] array.
     /// </summary>
-    [CozyNodeMenu("Utilities/Array", "Array Length")]
+    [CozyNodeMenu("Utilities/Array", "Array Length", Tooltip = "How many items the array contains.")]
     public sealed class ArrayLengthNode : CozyArrayNode
     {
         [Input("Array")]

@@ -4,7 +4,7 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// Reads an element from a T[] array without throwing for an invalid index.
     /// Is Valid tells the graph whether Item contains an element from the array.
     /// </summary>
-    [CozyNodeMenu("Utilities/Array", "Array Get Item")]
+    [CozyNodeMenu("Utilities/Array", "Array Get Item", Tooltip = "Reads the item at Index without errors. Is Valid is false when the index is outside the array.")]
     public sealed class ArrayGetItemNode : CozyArrayNode
     {
         [Input("Array")]

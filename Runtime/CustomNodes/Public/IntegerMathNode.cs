@@ -15,8 +15,8 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// A core value node that performs one selected calculation on two integer
     /// inputs. The selected operation belongs to this node's Options section.
     /// </summary>
-    [CozyNodeMenu("Utilities/Math", "Integer Math")]
-    public class IntegerMathNode : CozyNode
+    [CozyNodeMenu("Utilities/Math", "Integer Math", Tooltip = "Adds, subtracts, multiplies or divides two integers, as selected in Options.")]
+    public class IntegerMathNode : CozyIntegerNode
     {
         [Option("Operation", Tooltip = "The calculation applied to A and B.")]
         public IntegerMathOperation Operation = IntegerMathOperation.Add;

@@ -10,9 +10,9 @@ namespace ShaderFactory.CozyNodes.Runtime
     /// resolver and execution contract.
     /// </summary>
     [Serializable]
-    public class ReflectedCozyRuntimeNode : RuntimeCozyAuthoredElement, ICozyTriggerListener
+    internal class ReflectedCozyRuntimeNode : RuntimeCozyAuthoredElement, ICozyTriggerListener
     {
-        public override object GetValue(CozyRuntimePort port, CozyManager cozyManager)
+        public override object GetValue(CozyRuntimePort port, CozyGraphSession session)
         {
             if (port == null)
                 return null;
@@ -21,26 +21,26 @@ namespace ShaderFactory.CozyNodes.Runtime
             // their local value, Blackboard variable, or connected source port.
             // Only outputs are calculated by the game-authored CozyNode class.
             if (!OutputPorts.Contains(port))
-                return base.GetValue(port, cozyManager);
+                return base.GetValue(port, session);
 
-            CozyNode customNode = GetCustomNode(cozyManager);
+            CozyNode customNode = GetCustomNode(session);
             if (customNode == null)
-                return base.GetValue(port, cozyManager);
+                return base.GetValue(port, session);
 
-            CozyNodeContext context = new CozyNodeContext(this, cozyManager);
+            CozyNodeContext context = new CozyNodeContext(this, session);
             return CozyValueTypeRegistry.CloneForRuntime(customNode.GetValue(context, port.Key));
         }
 
-        public override CozyNodeExecutionResult Run(CozyManager cozyManager)
+        public override CozyNodeExecutionResult Run(CozyGraphSession session)
         {
-            return Run(cozyManager, null);
+            return Run(session, null);
         }
 
         public override CozyNodeExecutionResult Run(
-            CozyManager cozyManager,
+            CozyGraphSession session,
             string enteredFlowInputName)
         {
-            CozyNode customNode = GetCustomNode(cozyManager);
+            CozyNode customNode = GetCustomNode(session);
             if (customNode == null)
             {
                 return CozyNodeExecutionResult.Fail(
@@ -49,7 +49,7 @@ namespace ShaderFactory.CozyNodes.Runtime
 
             CozyNodeContext context = new CozyNodeContext(
                 this,
-                cozyManager,
+                session,
                 enteredFlowInputName);
             CozyNodeExecutionResult result = customNode.Execute(context);
             if (result == null)
@@ -61,9 +61,9 @@ namespace ShaderFactory.CozyNodes.Runtime
             return result;
         }
 
-        public override void CancelFlowScope(CozyManager cozyManager)
+        public override void CancelFlowScope(CozyGraphSession session)
         {
-            CozyNode customNode = GetCustomNode(cozyManager);
+            CozyNode customNode = GetCustomNode(session);
             customNode?.CancelFlowScope();
         }
 
@@ -73,21 +73,21 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// with runtime nodes, while the authored node keeps its behavior in
         /// the same public API as every other custom node.
         /// </summary>
-        public bool TryReceiveTrigger(string triggerName, CozyManager cozyManager)
+        public bool TryReceiveTrigger(string triggerName, CozyGraphSession session)
         {
-            CozyNode customNode = GetCustomNode(cozyManager);
+            CozyNode customNode = GetCustomNode(session);
             if (customNode is not ICozyNodeTriggerListener triggerListener)
                 return false;
 
-            CozyNodeContext context = new CozyNodeContext(this, cozyManager);
+            CozyNodeContext context = new CozyNodeContext(this, session);
             return triggerListener.TryReceiveTrigger(triggerName, context);
         }
 
-        private CozyNode GetCustomNode(CozyManager cozyManager)
+        private CozyNode GetCustomNode(CozyGraphSession session)
         {
-            if (cozyManager == null)
+            if (session == null)
             {
-                Debug.LogError("A custom Cozy node needs a running CozyManager.");
+                Debug.LogError("A custom Cozy node needs a running CozyGraphSession.");
                 return null;
             }
 
@@ -103,7 +103,7 @@ namespace ShaderFactory.CozyNodes.Runtime
             // Imported node instances, rather than their editor-local IDs, own
             // custom-node state. That keeps identical node IDs in future child
             // graphs from sharing one mutable custom node instance.
-            return cozyManager.GetOrCreateCustomNode(this, nodeType);
+            return session.GetOrCreateCustomNode(this, nodeType);
         }
     }
 }

@@ -64,6 +64,13 @@ namespace ShaderFactory.CozyNodes.Editor
             return base.TryGetDefaultColor(out color);
         }
 
+        protected override string GetDefaultTooltip()
+        {
+            // OnEnable resolves the generated node type before the base class
+            // asks for this, so the definition is available here.
+            return GetDefinition()?.Tooltip;
+        }
+
         /// <summary>
         /// Configures this adapter before it is added to a graph. Graph Toolkit
         /// defines the ports when AddNode is called, using this saved type name.
@@ -95,7 +102,7 @@ namespace ShaderFactory.CozyNodes.Editor
             return null;
         }
 
-        public override RuntimeCozyNode CreateRuntimeNode(string nodeID, string nodeType, RuntimeCozyGraph graph)
+        internal override RuntimeCozyNode CreateRuntimeNode(string nodeID, string nodeType, RuntimeCozyGraph graph)
         {
             ReflectedCozyRuntimeNode runtimeNode = new ReflectedCozyRuntimeNode();
             runtimeNode.NodeID = nodeID;
@@ -153,6 +160,9 @@ namespace ShaderFactory.CozyNodes.Editor
 
             foreach (CozyInputListDefinition inputList in definition.InputLists)
                 AddInputListPorts(context, definition, inputList);
+
+            foreach (CozyProvidedInputSetDefinition inputSet in definition.ProvidedInputSets)
+                AddProvidedInputSetPorts(context, inputSet);
 
             // Flow paths come first on action nodes. This keeps the ordinary
             // execution route readable and leaves value results, such as a For
@@ -275,6 +285,33 @@ namespace ShaderFactory.CozyNodes.Editor
             }
         }
 
+        /// <summary>
+        /// Creates one input port per entry returned by a provided input set's
+        /// provider. Port names use the entry's stable key, so Graph Toolkit keeps
+        /// existing values and wires when entries are added or reordered.
+        /// </summary>
+        private void AddProvidedInputSetPorts(
+            IPortDefinitionContext context,
+            CozyProvidedInputSetDefinition inputSet)
+        {
+            foreach (CozyProvidedInput providedInput in CozyNodeReflection.GetProvidedInputs(inputSet))
+            {
+                CozyPortDefinition port = new CozyPortDefinition();
+                port.Name = CozyNodeReflection.GetProvidedInputPortName(inputSet.Name, providedInput.Key);
+                port.DisplayName = providedInput.DisplayName;
+                port.Tooltip = string.IsNullOrWhiteSpace(providedInput.Tooltip)
+                    ? inputSet.Tooltip
+                    : providedInput.Tooltip;
+                port.ValueType = inputSet.ElementType;
+                port.IsInput = true;
+                port.IsTextArea = inputSet.IsTextArea;
+                port.MinTextAreaLines = inputSet.MinTextAreaLines;
+                port.MaxTextAreaLines = inputSet.MaxTextAreaLines;
+                port.MinTextAreaWidth = inputSet.MinTextAreaWidth;
+                AddInputPort(context, port);
+            }
+        }
+
         private int GetInputListCount(
             CozyNodeDefinition nodeDefinition,
             CozyInputListDefinition inputList)
@@ -291,9 +328,15 @@ namespace ShaderFactory.CozyNodes.Editor
             return Math.Clamp(count, inputList.MinimumCount, inputList.MaximumCount);
         }
 
+        /// <summary>
+        /// Describes the node's variable port structure: input list counts and
+        /// the keys of provided input sets. When this text changes, the node is
+        /// redefined. Provided sets are included so that, for example, a language
+        /// added in project settings appears the next time the graph changes.
+        /// </summary>
         private string GetInputListLayout(CozyNodeDefinition definition)
         {
-            if (definition.InputLists.Count == 0)
+            if (definition.InputLists.Count == 0 && definition.ProvidedInputSets.Count == 0)
                 return string.Empty;
 
             System.Text.StringBuilder layout = new System.Text.StringBuilder();
@@ -303,6 +346,21 @@ namespace ShaderFactory.CozyNodes.Editor
                 layout.Append('=');
                 layout.Append(GetInputListCount(definition, inputList));
                 layout.Append(';');
+            }
+
+            foreach (CozyProvidedInputSetDefinition inputSet in definition.ProvidedInputSets)
+            {
+                layout.Append(inputSet.Name);
+                layout.Append('[');
+                foreach (CozyProvidedInput providedInput in CozyNodeReflection.GetProvidedInputs(inputSet))
+                {
+                    layout.Append(providedInput.Key);
+                    layout.Append('|');
+                    layout.Append(providedInput.DisplayName);
+                    layout.Append(',');
+                }
+
+                layout.Append("];");
             }
 
             return layout.ToString();

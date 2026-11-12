@@ -10,27 +10,27 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// not depend on Graph Toolkit; the Editor uses this only to match a
         /// running graph to its open authoring window for execution visualization.
         /// </summary>
-        public string SourceGraphID;
+        [SerializeField] internal string SourceGraphID;
 
         /// <summary>
-        /// All places where this graph can begin. A graph can have one On Start
-        /// entry and any number of named On Event entries.
+        /// All places where this graph can begin. A graph can have one each of
+        /// On Graph Start, On Update, and On Late Update, plus named On Event entries.
         /// </summary>
-        [SerializeReference] public List<RuntimeCozyGraphEntry> Entries = new();
+        [SerializeReference] internal List<RuntimeCozyGraphEntry> Entries = new();
 
-        [SerializeReference] public List<RuntimeCozyNode> AllNodes = new();
+        [SerializeReference] internal List<RuntimeCozyNode> AllNodes = new();
 
         /// <summary>
-        /// Blackboard declarations imported from the editor graph. A CozyManager
+        /// Blackboard declarations imported from the editor graph. A CozyGraphSession
         /// copies these defaults into CozyRuntimeVariables when execution begins.
         /// </summary>
-        [SerializeReference] public List<RuntimeCozyVariableDefinition> VariableDefinitions = new();
+        [SerializeReference] internal List<RuntimeCozyVariableDefinition> VariableDefinitions = new();
 
         /// <summary>
-        /// Finds one imported entry. On Start has no caller-provided name;
-        /// On Event entries are identified by their authored event name.
+        /// Finds one imported entry. Lifecycle entries have no caller-provided
+        /// name; On Event entries are identified by their authored event name.
         /// </summary>
-        public bool TryGetEntry(
+        internal bool TryGetEntry(
             CozyGraphEntryKind kind,
             string entryName,
             out RuntimeCozyGraphEntry entry)
@@ -57,7 +57,7 @@ namespace ShaderFactory.CozyNodes.Runtime
         /// context. Blocks are intentionally not listed in AllNodes because the
         /// graph runner must enter them through their context.
         /// </summary>
-        public bool TryGetNode(string nodeID, out RuntimeCozyNode node)
+        internal bool TryGetNode(string nodeID, out RuntimeCozyNode node)
         {
             foreach (RuntimeCozyNode candidate in AllNodes)
             {

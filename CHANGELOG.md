@@ -4,6 +4,16 @@ All notable changes to Cozy Nodes are documented here. The package follows
 [Semantic Versioning](https://semver.org): a major version for breaking changes,
 a minor version for new features, a patch version for fixes.
 
+## [2.1.0] - 2026-11-12
+
+### Added
+- **Load Scene And Wait** (Scene Management): loads a scene asynchronously and
+  continues the flow once it has finished loading, for graphs that survive
+  scene changes.
+- **If Then Continue** (Control Flow): runs the True or False path, then
+  continues through Then. Lets both cases of a condition reach the same next
+  step, since a Graph Toolkit input accepts a single wire.
+
 ## [2.0.0] - 2026-11-12
 
 ### Breaking

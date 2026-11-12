@@ -205,6 +205,10 @@ Unity's `SceneManager` API:
   **Additive** mode. It is terminal because Unity completes even synchronous
   scene load requests on a later rendered frame, so a normal outgoing flow
   would misleadingly run before the new scene is ready.
+- **Load Scene And Wait** loads a scene asynchronously and continues the flow
+  once it has finished loading. Use it in graphs that survive scene changes,
+  such as a persistent boot or game-flow graph; a graph owned by an object in
+  the replaced scene is destroyed with it.
 - **Reload Active Scene** is the terminal shortcut for reloading the current
   Build Settings scene.
 - **Set Active Scene** selects an already-loaded scene as Unity's destination
@@ -477,6 +481,17 @@ Performs the selected operation—**Add**, **Subtract**, **Multiply**, or
 Routes execution through **True** when **Condition** is true; otherwise, it
 routes execution through **False**. This is a public `CozyNode` flow node, so
 game code defines it without a paired Editor node.
+
+</details>
+
+<details>
+<summary>If Then Continue Node</summary>
+
+Runs **True** or **False** depending on **Condition**, then continues through
+**Then** once that path ends at an unconnected output, even if the path waited
+on the way. Graph Toolkit inputs accept a single wire, so the two branches of an
+If/Else cannot join again into one node; use this node when both cases must
+continue to the same next step. Leave a path unconnected to skip it.
 
 </details>
 
